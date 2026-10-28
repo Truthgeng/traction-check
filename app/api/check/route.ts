@@ -31,7 +31,9 @@ const handler = async (req: NextRequest): Promise<NextResponse<unknown>> => {
   if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 });
 
   try {
-    const report = await runCheck(input);
+    // Test mode only: x-no-cache lets us measure how steady fresh results are
+    const skipCache = isSandbox() && req.headers.get("x-no-cache") === "1";
+    const report = await runCheck(input, { skipCache });
     return NextResponse.json(report);
   } catch (e) {
     console.error(e);

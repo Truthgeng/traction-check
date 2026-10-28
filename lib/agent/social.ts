@@ -13,18 +13,50 @@ export async function searchX(
   query: string,
   type: "latest" | "top",
   receipts: PaidCall[],
-): Promise<Post[]> {
+  cursor?: string,
+): Promise<{ posts: Post[]; next?: string }> {
   const raw = await paidPost(
     "x-search",
     X_SEARCH_PATH,
-    { query, type },
+    cursor ? { query, type, cursor } : { query, type },
     process.env.MAX_X_SEARCH || "0.02",
     receipts,
   );
   const posts = extractPosts(raw);
+  const next = findCursor(raw);
+  if (!next) console.warn(`x search (${type}) gave no next-page cursor; top-level keys:`, JSON.stringify(Object.keys((raw as any)?.output?.data ?? (raw as any)?.data ?? raw ?? {})));
   // If nothing was recognised, log the start of the reply so the format can be fixed from the Vercel logs
   if (!posts.length) console.warn(`x search (${type}) returned no recognisable posts:`, JSON.stringify(raw).slice(0, 800));
-  return posts;
+  return { posts, next };
+}
+
+/**
+ * Reads up to `pages` pages of one search type, following the next-page cursor.
+ * Each page is one paid call (about $0.005).
+ */
+export async function searchXPages(query: string, type: "latest" | "top", pages: number, receipts: PaidCall[]) {
+  const all: Post[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < pages; i++) {
+    const { posts, next } = await searchX(query, type, receipts, cursor);
+    all.push(...posts);
+    if (!next || !posts.length) break;
+    cursor = next;
+  }
+  return all;
+}
+
+/** Finds the provider's next-page cursor wherever it sits in the reply. */
+function findCursor(node: any, depth = 0): string | undefined {
+  if (!node || typeof node !== "object" || depth > 4 || Array.isArray(node)) return undefined;
+  for (const k of ["next_cursor", "nextCursor", "cursor_bottom", "bottom_cursor", "next_token"]) {
+    if (typeof node[k] === "string" && node[k]) return node[k];
+  }
+  for (const v of Object.values(node)) {
+    const c = findCursor(v, depth + 1);
+    if (c) return c;
+  }
+  return undefined;
 }
 
 /**

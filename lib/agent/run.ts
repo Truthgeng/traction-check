@@ -1,15 +1,18 @@
-import { searchX, socialSignals } from "./social";
+import { searchXPages, socialSignals } from "./social";
 import { chainSignals } from "./onchain";
 import { writeVerdict, ruleVerdict } from "./verdict";
 import { mockReport } from "./mock";
 import { mode, isMock, isSandbox } from "./mode";
 import type { CheckInput, PaidCall, Report } from "@/lib/types";
+import { getCached, putCached } from "@/lib/cache";
 
 export { isMock, isSandbox, mode };
 
 /** The full agent run for one check. */
-export async function runCheck(input: CheckInput): Promise<Report> {
+export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } = {}): Promise<Report> {
   if (isMock()) return mockReport(input);
+  const cached = opts.skipCache ? null : getCached(input);
+  if (cached) return cached;
   const sandbox = isSandbox();
 
   const receipts: PaidCall[] = [];
@@ -22,8 +25,11 @@ export async function runCheck(input: CheckInput): Promise<Report> {
   const [social, chain] = await Promise.all([
     (async () => {
       const q = input.handle ? `@${input.handle} within_time:7d` : `${input.contract} within_time:7d`;
-      const latest = await searchX(q, "latest", receipts);
-      const top = await searchX(q, "top", receipts);
+      // 2 pages of latest + 1 page of top: a bigger sample keeps results steady between checks
+      const [latest, top] = await Promise.all([
+        searchXPages(q, "latest", 2, receipts),
+        searchXPages(q, "top", 1, receipts),
+      ]);
       const map = new Map([...latest, ...top].map((p) => [p.id ?? p.text, p]));
       // the project's own posts are not traction
       const posts = [...map.values()].filter((p) => p.author !== input.handle?.toLowerCase());
@@ -48,7 +54,7 @@ export async function runCheck(input: CheckInput): Promise<Report> {
       ? ruleVerdict(social, chain)
       : await writeVerdict(subject, social, chain, receipts);
 
-  return {
+  const report: Report = {
     input,
     social,
     chain,
@@ -58,4 +64,7 @@ export async function runCheck(input: CheckInput): Promise<Report> {
     mode: mode(),
     generatedAt: new Date().toISOString(),
   };
+  // Only cache a full result. A partial one (a source failed) should be retried next time.
+  if (!errors.length) putCached(input, report);
+  return report;
 }

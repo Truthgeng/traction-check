@@ -95,4 +95,6 @@ export type Report = {
   mock: boolean;
   mode: "demo" | "test" | "live";
   generatedAt: string;
+  /** Set when this result was served from the 15-minute cache */
+  cachedAt?: string;
 };

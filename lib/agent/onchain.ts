@@ -2,10 +2,14 @@ import { paidPost, GATEWAY } from "./buy";
 import type { Chain, ChainSignals, PaidCall } from "@/lib/types";
 
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-const WINDOW_HOURS = 48;
-const MAX_TRANSFERS = 20_000; // stop reading after this many, enough to judge patterns
+const WINDOW_HOURS = 24;
+// Stop going further back once this many transfers are read. Reading always starts at
+// the NEWEST block, so two checks minutes apart see the same recent activity.
+const MAX_TRANSFERS = 15_000;
 
 type Transfer = { from: string; to: string };
+/** What a reader got: the transfers, and how many hours back it actually reached */
+type Read = { transfers: Transfer[]; coveredHours: number };
 
 const topicToAddr = (t: string) => ("0x" + t.slice(-40)).toLowerCase();
 
@@ -28,7 +32,7 @@ async function rpcBatch(calls: { method: string; params: unknown[] }[], receipts
   return body.map((b) => byId.get(b.id));
 }
 
-async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Transfer[]> {
+async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Read> {
   // Batch 1: where is the chain head
   const [head] = await rpcBatch([{ method: "eth_blockNumber", params: [] }], receipts);
   if (!head?.result) throw new Error("Could not read Celo block number");
@@ -36,26 +40,29 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Tr
   const span = Math.floor((WINDOW_HOURS * 3600) / CELO_BLOCK_SECONDS);
   const start = Math.max(0, latest - span);
 
-  // Batch 2: every Transfer log for the token across the window, in chunks
-  const calls: { method: string; params: unknown[] }[] = [];
-  for (let from = start; from <= latest; from += LOG_CHUNK) {
-    const to = Math.min(latest, from + LOG_CHUNK - 1);
-    calls.push({
+  // Batch 2: every Transfer log across the window, in chunks, NEWEST chunk first
+  const chunks: { from: number; to: number }[] = [];
+  for (let to = latest; to >= start; to -= LOG_CHUNK) chunks.push({ from: Math.max(start, to - LOG_CHUNK + 1), to });
+  const replies = await rpcBatch(
+    chunks.map((c) => ({
       method: "eth_getLogs",
-      params: [{ address: contract, topics: [TRANSFER_TOPIC], fromBlock: hex(from), toBlock: hex(to) }],
-    });
-  }
-  const replies = await rpcBatch(calls, receipts);
+      params: [{ address: contract, topics: [TRANSFER_TOPIC], fromBlock: hex(c.from), toBlock: hex(c.to) }],
+    })),
+    receipts,
+  );
 
   const transfers: Transfer[] = [];
-  for (const r of replies) {
-    if (!r?.result) continue; // a failed chunk is skipped, not retried
+  let reachedBlock = latest;
+  for (let i = 0; i < chunks.length; i++) {
+    const r = replies[i];
+    if (!r?.result) break; // a failed chunk ends the read here, so the covered window stays honest
     for (const log of r.result as { topics: string[] }[]) {
       if (log.topics?.length >= 3) transfers.push({ from: topicToAddr(log.topics[1]), to: topicToAddr(log.topics[2]) });
-      if (transfers.length >= MAX_TRANSFERS) return transfers;
     }
+    reachedBlock = chunks[i].from;
+    if (transfers.length >= MAX_TRANSFERS) break;
   }
-  return transfers;
+  return { transfers, coveredHours: ((latest - reachedBlock) * CELO_BLOCK_SECONDS) / 3600 };
 }
 
 const hex = (n: number) => "0x" + n.toString(16);
@@ -87,22 +94,12 @@ async function sqdFetch(url: string, init?: RequestInit, tries = 4): Promise<Res
   throw new Error(`SQD unreachable: ${url}`);
 }
 
-async function sqdTransfers(chain: Chain, contract: string): Promise<Transfer[]> {
-  const ds = `${GATEWAY}/sqd/datasets/${SQD_DATASET[chain]}`;
-  const since = Math.floor(Date.now() / 1000) - WINDOW_HOURS * 3600;
-
-  const startRes = await sqdFetch(`${ds}/timestamps/${since}/block`);
-  const headRes = await sqdFetch(`${ds}/head`);
-  if (!startRes.ok || !headRes.ok) throw new Error(`SQD unavailable for ${chain} (${startRes.status}/${headRes.status})`);
-  const fromBlock = Number((await startRes.json()).block_number);
-  const head = await headRes.json();
-  const toBlock = Number(head.number ?? head.block_number ?? head.height);
-
-  const transfers: Transfer[] = [];
+/** Reads one block range completely (SQD streams it in pages). */
+async function sqdRange(ds: string, contract: string, fromBlock: number, toBlock: number, deadline: number) {
+  const out: Transfer[] = [];
   let cursor = fromBlock;
-  // stay well inside the 60s function limit: stop reading after 25s and judge what we have
-  const deadline = Date.now() + 25_000;
-  for (let page = 0; page < 40 && cursor <= toBlock && Date.now() < deadline; page++) {
+  while (cursor <= toBlock) {
+    if (Date.now() > deadline) return { transfers: out, complete: false };
     const res = await sqdFetch(`${ds}/stream`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -114,12 +111,7 @@ async function sqdTransfers(chain: Chain, contract: string): Promise<Transfer[]>
         logs: [{ address: [contract.toLowerCase()], topic0: [TRANSFER_TOPIC] }],
       }),
     });
-    if (res.status === 429) {
-      const wait = Number(res.headers.get("retry-after") || "2");
-      await new Promise((r) => setTimeout(r, wait * 1000));
-      continue;
-    }
-    if (!res.ok) break;
+    if (!res.ok) return { transfers: out, complete: false };
     const lines = (await res.text()).split("\n").filter(Boolean);
     if (!lines.length) break;
     let last = cursor;
@@ -127,13 +119,44 @@ async function sqdTransfers(chain: Chain, contract: string): Promise<Transfer[]>
       const blk = JSON.parse(line);
       last = Number(blk.header?.number ?? last);
       for (const log of blk.logs ?? []) {
-        if (log.topics?.length >= 3) transfers.push({ from: topicToAddr(log.topics[1]), to: topicToAddr(log.topics[2]) });
+        if (log.topics?.length >= 3) out.push({ from: topicToAddr(log.topics[1]), to: topicToAddr(log.topics[2]) });
       }
-      if (transfers.length >= MAX_TRANSFERS) return transfers;
     }
+    if (last < cursor) break;
     cursor = last + 1;
   }
-  return transfers;
+  return { transfers: out, complete: true };
+}
+
+async function sqdTransfers(chain: Chain, contract: string): Promise<Read> {
+  const ds = `${GATEWAY}/sqd/datasets/${SQD_DATASET[chain]}`;
+  const since = Math.floor(Date.now() / 1000) - WINDOW_HOURS * 3600;
+
+  const startRes = await sqdFetch(`${ds}/timestamps/${since}/block`);
+  const headRes = await sqdFetch(`${ds}/head`);
+  if (!startRes.ok || !headRes.ok) throw new Error(`SQD unavailable for ${chain} (${startRes.status}/${headRes.status})`);
+  const fromBlock = Number((await startRes.json()).block_number);
+  const head = await headRes.json();
+  const toBlock = Number(head.number ?? head.block_number ?? head.height);
+
+  // Work backwards in 2-hour slices from the newest block, and stop when we have
+  // enough transfers or time runs out. Only fully read slices count.
+  const blocksPerHour = Math.max(1, (toBlock - fromBlock) / WINDOW_HOURS);
+  const SLICE_HOURS = 2;
+  const slice = Math.max(1, Math.round(blocksPerHour * SLICE_HOURS));
+  const deadline = Date.now() + 25_000; // stay well inside the 60s function limit
+
+  const transfers: Transfer[] = [];
+  let coveredHours = 0;
+  for (let to = toBlock; to > fromBlock; to -= slice) {
+    const from = Math.max(fromBlock, to - slice + 1);
+    const part = await sqdRange(ds, contract, from, to, deadline);
+    if (!part.complete) break;
+    transfers.push(...part.transfers);
+    coveredHours += (to - from + 1) / blocksPerHour;
+    if (transfers.length >= MAX_TRANSFERS) break;
+  }
+  return { transfers, coveredHours };
 }
 
 // ---------------------------------------------------------------------------
@@ -147,11 +170,17 @@ export async function chainSignals(
   // Celo reads are paid through Chainstack in live mode. Chainstack has no test
   // network on buy, so test mode reads Celo through the free SQD route instead.
   const useChainstack = chain === "celo" && opts.paidCelo;
-  const transfers = useChainstack ? await celoTransfers(contract, receipts) : await sqdTransfers(chain, contract);
-  return summarise(chain, transfers, useChainstack ? "chainstack" : "sqd");
+  const read = useChainstack ? await celoTransfers(contract, receipts) : await sqdTransfers(chain, contract);
+  if (!read.transfers.length && read.coveredHours === 0) throw new Error(`No ${chain} data could be read`);
+  return summarise(chain, read.transfers, useChainstack ? "chainstack" : "sqd", read.coveredHours);
 }
 
-export function summarise(chain: Chain, transfers: Transfer[], source: ChainSignals["source"]): ChainSignals {
+export function summarise(
+  chain: Chain,
+  transfers: Transfer[],
+  source: ChainSignals["source"],
+  coveredHours = WINDOW_HOURS,
+): ChainSignals {
   const zero = "0x0000000000000000000000000000000000000000";
   const senders = new Set<string>();
   const receivers = new Set<string>();
@@ -192,7 +221,8 @@ export function summarise(chain: Chain, transfers: Transfer[], source: ChainSign
 
   return {
     chain,
-    windowHours: WINDOW_HOURS,
+    // the hours actually read, not the hours asked for
+    windowHours: Math.max(1, Math.round(coveredHours)),
     transfers: transfers.length,
     uniqueSenders: senders.size,
     uniqueReceivers: receivers.size,

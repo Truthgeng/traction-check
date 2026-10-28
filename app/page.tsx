@@ -207,6 +207,10 @@ export default function Home() {
             </div>
           </div>
 
+          {report.cachedAt && (
+            <p className="hint">Checked {Math.max(1, Math.round((Date.now() - Date.parse(report.cachedAt)) / 60000))} min ago. Results refresh every 15 minutes.</p>
+          )}
+
           <a className="share" href={shareUrl(report)} target="_blank" rel="noreferrer">Share result on X</a>
 
           {report.verdict.flags.length > 0 && (

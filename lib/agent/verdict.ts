@@ -12,7 +12,8 @@ export function ruleScore(social: SocialSignals | null, chain: ChainSignals | nu
   const positives: string[] = [];
   let evidence = 0;
 
-  if (social && social.posts >= 5) {
+  // Below 10 posts the X numbers swing too much from one check to the next to judge on
+  if (social && social.posts >= 10) {
     evidence++;
     const authorRatio = social.uniqueAuthors / social.posts;
     if (authorRatio < 0.35) { score -= 15; flags.push(`Only ${social.uniqueAuthors} accounts made ${social.posts} posts`); }
@@ -25,7 +26,7 @@ export function ruleScore(social: SocialSignals | null, chain: ChainSignals | nu
     }
     // Who is posting
     const total = social.tiers.established + social.tiers.regular + social.tiers.new + social.tiers.fake;
-    if (total >= 5) {
+    if (total >= 8) {
       const fakeShare = social.tiers.fake / total;
       const lowShare = (social.tiers.fake + social.tiers.new) / total;
       const goodShare = social.tiers.established / total;
@@ -40,7 +41,7 @@ export function ruleScore(social: SocialSignals | null, chain: ChainSignals | nu
       score -= 5; flags.push("High post count but almost no likes or reposts");
     }
   } else if (social) {
-    flags.push("Very few recent posts found on X");
+    flags.push(`Only ${social.posts} posts about it on X in the last 7 days, too few to judge`);
   }
 
   if (chain && chain.transfers >= 10) {
