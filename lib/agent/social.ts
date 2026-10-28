@@ -22,7 +22,7 @@ export async function searchX(
     receipts,
   );
   const posts = extractPosts(raw);
-  if (process.env.LOG_X_SAMPLE === "1") console.log("x sample:", JSON.stringify(firstTweetLike(raw)).slice(0, 3000));
+  if (process.env.LOG_X_SAMPLE === "1") { const t = firstTweetLike(raw); console.log("x sample user:", JSON.stringify(t?.user_info ?? t?.user ?? t?.author ?? {}).slice(0, 3000)); }
   // If nothing was recognised, log the start of the reply so the format can be fixed from the Vercel logs
   if (!posts.length) console.warn(`x search (${type}) returned no recognisable posts:`, JSON.stringify(raw).slice(0, 800));
   return posts;
