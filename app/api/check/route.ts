@@ -5,6 +5,7 @@ import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { runCheck } from "@/lib/agent/run";
 import { isMock, isSandbox } from "@/lib/agent/mode";
 import { CHAINS, type CheckInput } from "@/lib/types";
+import { COOKIE, freeLeft, nextCookie, takeDailySlot } from "@/lib/free";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -73,4 +74,45 @@ function paidHandler() {
   return withX402(handler, route, server);
 }
 
-export const POST = paidHandler();
+const paid = paidHandler();
+const paymentOn = paid !== handler;
+
+/**
+ * Each visitor gets FREE_CHECKS free checks (default 2), then pays per check.
+ * A request that already carries a payment always goes down the paid path.
+ */
+export async function POST(req: NextRequest) {
+  const hasPayment = req.headers.has("x-payment") || req.headers.has("payment-signature");
+  const cookie = req.cookies.get(COOKIE)?.value;
+
+  if (!paymentOn || hasPayment || freeLeft(cookie) === 0) {
+    try {
+      const res = await paid(req);
+      // The x402 wrapper answers 500 when it can't reach the payment facilitator.
+      // Our own handler never returns 500 (it uses 502), so this is the payment step.
+      if (res.status === 500) {
+        return NextResponse.json({ error: "Payments are unavailable right now. Try again in a minute." }, { status: 503 });
+      }
+      return res;
+    } catch (e) {
+      console.error("payment step failed", e);
+      return NextResponse.json({ error: "Payments are unavailable right now. Try again in a minute." }, { status: 503 });
+    }
+  }
+
+  if (!takeDailySlot()) {
+    return NextResponse.json(
+      { error: "Free checks are used up for today. Connect a wallet to keep going.", needsPayment: true },
+      { status: 429 },
+    );
+  }
+
+  const res = await handler(req);
+  // Only a check that actually worked uses up a free one
+  if (res.ok) {
+    res.cookies.set(COOKIE, nextCookie(cookie), {
+      httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 60 * 60 * 24 * 365,
+    });
+  }
+  return res;
+}

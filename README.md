@@ -6,7 +6,7 @@ Built for the Agents on Open Rails Hackathon, Build with buy track.
 
 ## How it works
 
-1. A user enters an X handle and/or a token contract, then pays a small fee per check in USDT or USDC on Celo (x402, settled through Celo's hosted facilitator). They are only charged if the check completes.
+1. A user enters an X handle and/or a token contract. The first 2 checks are free with no wallet. After that they pay a small fee per check in USDT or USDC on Celo (x402, settled through Celo's hosted facilitator). They are only charged if the check completes.
 2. The agent pays for services it does not own through [buy](https://usebuy.ai):
    - **X post search** (2 calls: latest and top posts, last 7 days)
    - **Chainstack Celo RPC** (token transfer logs for the last 48h, for Celo tokens)

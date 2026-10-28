@@ -7,7 +7,7 @@ import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
 import { CHAINS, type Chain, type Report } from "@/lib/types";
 
-type Config = { mode: "demo" | "test" | "live"; mock: boolean; paid: boolean; priceUsd: number };
+type Config = { mode: "demo" | "test" | "live"; mock: boolean; paid: boolean; priceUsd: number; freeChecks: number; freeLeft: number | null };
 
 declare global {
   interface Window { ethereum?: any }
@@ -31,10 +31,20 @@ export default function Home() {
   const [report, setReport] = useState<Report | null>(null);
 
   useEffect(() => {
-    fetch("/api/config").then((r) => r.json()).then(setConfig).catch(() => setConfig({ mode: "demo", mock: true, paid: false, priceUsd: 0 }));
+    loadConfig();
     // MiniPay connects on its own
     if (typeof window !== "undefined" && window.ethereum?.isMiniPay) connect();
   }, []);
+
+  function loadConfig() {
+    fetch("/api/config", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setConfig)
+      .catch(() => setConfig({ mode: "demo", mock: true, paid: false, priceUsd: 0, freeChecks: 0, freeLeft: null }));
+  }
+
+  // Payment is only asked for once the free checks are used up
+  const mustPay = !!config?.paid && (config.freeLeft ?? 0) === 0;
 
   async function connect() {
     setError("");
@@ -55,11 +65,11 @@ export default function Home() {
   async function run() {
     setError("");
     setReport(null);
-    if (config?.paid && !wallet) return connect();
+    if (mustPay && !wallet) return connect();
     setBusy(true);
     try {
       let doFetch: typeof fetch = fetch;
-      if (config?.paid && wallet) {
+      if (mustPay && wallet) {
         // The user signs a USDT/USDC authorization for this one check. Nothing moves unless the check succeeds.
         const signer = {
           address: wallet.address,
@@ -74,8 +84,10 @@ export default function Home() {
         body: JSON.stringify({ handle, contract, chain }),
       });
       const data = await res.json();
+      if (data.needsPayment && config) setConfig({ ...config, freeLeft: 0 });
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
       setReport(data);
+      loadConfig(); // refresh the free checks left
     } catch (e: any) {
       setError(e?.message?.includes("rejected") ? "Payment was cancelled." : e?.message || "Something went wrong.");
     } finally {
@@ -86,18 +98,20 @@ export default function Home() {
   const tone = (s: number) => (s >= 65 ? "good" : s >= 40 ? "mid" : "bad");
   const buttonText = busy
     ? "Checking..."
-    : config?.paid && !wallet
-      ? "Connect wallet"
-      : config?.paid
-        ? `Check for $${config.priceUsd.toFixed(2)}`
-        : "Run check";
+    : config?.paid && !mustPay
+      ? `Run free check (${config.freeLeft} left)`
+      : mustPay && !wallet
+        ? "Connect wallet to keep checking"
+        : mustPay
+          ? `Check for $${config!.priceUsd.toFixed(2)}`
+          : "Run check";
 
   return (
     <main className="wrap">
       <div className="top">
         <div className="brand">traction<span>/</span>check</div>
         {wallet ? <span className="pill">{wallet.address.slice(0, 6)}…{wallet.address.slice(-4)}</span>
-          : config?.paid ? <button className="small" onClick={connect}>Connect</button> : null}
+          : mustPay ? <button className="small" onClick={connect}>Connect</button> : null}
       </div>
 
       <h1>Is the hype real?</h1>
@@ -120,7 +134,12 @@ export default function Home() {
           </div>
         </div>
         <button className="primary" disabled={busy || (!handle && !contract)} onClick={run}>{buttonText}</button>
-        {config?.paid && <p className="hint">Paid in USDT or USDC on Celo. You only pay if the check completes.</p>}
+        {config?.paid && !mustPay && (
+          <p className="hint">First {config.freeChecks} checks are free. No wallet needed.</p>
+        )}
+        {mustPay && (
+          <p className="hint">${config!.priceUsd.toFixed(2)} per check in USDT or USDC on Celo. You only pay if the check completes.</p>
+        )}
         {error && <p className="error">{error}</p>}
       </div>
 
