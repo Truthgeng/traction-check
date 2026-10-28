@@ -8,7 +8,8 @@ import { CHAINS, type CheckInput } from "@/lib/types";
 import { COOKIE, freeLeft, nextCookie, takeDailySlot } from "@/lib/free";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Checks usually take 30 to 45s (several paid calls plus chain reads). 120s gives headroom.
+export const maxDuration = 120;
 
 function parseInput(body: any): CheckInput | string {
   const handle = typeof body?.handle === "string" ? body.handle.trim().replace(/^@/, "") : "";
