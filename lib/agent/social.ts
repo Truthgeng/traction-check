@@ -22,6 +22,7 @@ export async function searchX(
     receipts,
   );
   const posts = extractPosts(raw);
+  if (process.env.LOG_X_SAMPLE === "1") console.log("x sample:", JSON.stringify(firstTweetLike(raw)).slice(0, 3000));
   // If nothing was recognised, log the start of the reply so the format can be fixed from the Vercel logs
   if (!posts.length) console.warn(`x search (${type}) returned no recognisable posts:`, JSON.stringify(raw).slice(0, 800));
   return posts;
@@ -73,6 +74,15 @@ export function extractPosts(raw: unknown): Post[] {
 
   visit(raw, 0);
   return out;
+}
+
+// Debug helper: the first object that looks like a post, to see which account fields the provider sends
+function firstTweetLike(node: any, depth = 0): any {
+  if (!node || depth > 8 || typeof node !== "object") return null;
+  if (Array.isArray(node)) { for (const n of node) { const f = firstTweetLike(n, depth + 1); if (f) return f; } return null; }
+  if (typeof (node.text ?? node.full_text) === "string") return node;
+  for (const v of Object.values(node)) { const f = firstTweetLike(v, depth + 1); if (f) return f; }
+  return null;
 }
 
 // X returns text HTML-escaped (&amp; and friends)
