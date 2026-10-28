@@ -27,13 +27,21 @@ export function mockReport(input: CheckInput): Report {
   for (let i = 0; i < count; i++) {
     if (farmed) {
       const a = `bot_${Math.floor(rand() * 8)}`;
-      posts.push({ id: `m${i}`, author: a, followers: Math.floor(rand() * 150), text: shill[Math.floor(rand() * shill.length)], likes: 0, reposts: rand() > 0.8 ? 1 : 0 });
+      const botNo = Number(a.split("_")[1]);
+      posts.push({
+        id: `m${i}`, author: a, followers: botNo * 9, text: shill[Math.floor(rand() * shill.length)], likes: 0, reposts: rand() > 0.8 ? 1 : 0,
+        authorJoined: new Date(Date.now() - (5 + botNo * 9) * 86_400_000).toUTCString(), defaultAvatar: botNo % 3 === 0,
+      });
     } else {
       const a = `user_${Math.floor(rand() * 60)}`;
       // real people word things differently, so mix an opener with a topic
       const openers = ["honestly", "ok so", "update:", "small thing but", "day 3 using it and", "fwiw", "not gonna lie", "quick take,"];
       const text = `${openers[Math.floor(rand() * openers.length)]} ${real[Math.floor(rand() * real.length)]}, ${["will keep testing", "curious what others think", "still early", "worth a look", "need more data"][Math.floor(rand() * 5)]}`;
-      posts.push({ id: `m${i}`, author: a, followers: 200 + Math.floor(rand() * 9000), text, likes: Math.floor(rand() * 40), reposts: Math.floor(rand() * 8) });
+      const userNo = Number(a.split("_")[1]);
+      posts.push({
+        id: `m${i}`, author: a, followers: 150 + userNo * 140, text, likes: Math.floor(rand() * 40), reposts: Math.floor(rand() * 8),
+        authorJoined: new Date(Date.now() - (60 + userNo * 45) * 86_400_000).toUTCString(), verified: userNo % 11 === 0, defaultAvatar: false,
+      });
     }
   }
   const social = input.handle || input.contract ? socialSignals(posts) : null;

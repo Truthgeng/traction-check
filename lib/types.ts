@@ -31,9 +31,24 @@ export type Post = {
   text: string;
   author: string;
   followers?: number;
+  authorJoined?: string; // when the posting account was created
+  verified?: boolean;
+  defaultAvatar?: boolean; // still on X's default profile picture
   createdAt?: string;
   likes?: number;
   reposts?: number;
+};
+
+export type AccountTier = "established" | "regular" | "new" | "fake";
+
+/** One account that posted about the project, and how much to trust it. */
+export type Account = {
+  handle: string;
+  posts: number;
+  followers?: number;
+  ageDays?: number;
+  verified?: boolean;
+  tier: AccountTier;
 };
 
 export type SocialSignals = {
@@ -43,6 +58,12 @@ export type SocialSignals = {
   smallAccountShare: number | null; // share of posts from accounts under 200 followers
   duplicateShare: number; // share of posts that repeat another post's text
   avgEngagement: number | null;
+  /** How many posting accounts fall in each tier */
+  tiers: Record<AccountTier, number>;
+  /** Share of posting accounts under 90 days old, null when ages are unknown */
+  newAccountShare: number | null;
+  /** Posting accounts, most active first (max 25) */
+  accounts: Account[];
   samples: Post[];
 };
 

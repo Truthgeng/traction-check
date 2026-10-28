@@ -1,5 +1,5 @@
 import { paidPost } from "./buy";
-import type { PaidCall, Post, SocialSignals } from "@/lib/types";
+import type { Account, PaidCall, Post, SocialSignals } from "@/lib/types";
 
 /**
  * X search through the buy gateway.
@@ -22,7 +22,6 @@ export async function searchX(
     receipts,
   );
   const posts = extractPosts(raw);
-  if (process.env.LOG_X_SAMPLE === "1") { const t = firstTweetLike(raw); console.log("x sample user:", JSON.stringify(t?.user_info ?? t?.user ?? t?.author ?? {}).slice(0, 3000)); }
   // If nothing was recognised, log the start of the reply so the format can be fixed from the Vercel logs
   if (!posts.length) console.warn(`x search (${type}) returned no recognisable posts:`, JSON.stringify(raw).slice(0, 800));
   return posts;
@@ -62,6 +61,11 @@ export function extractPosts(raw: unknown): Post[] {
           text,
           author: author.replace(/^@/, "").toLowerCase(),
           followers: num(user?.followers_count ?? user?.followers ?? user?.followersCount ?? o.author_followers),
+          // Account fields, as TikHub sends them in user_info (checked against a live reply)
+          authorJoined: typeof user === "object" ? user?.created_at ?? user?.createdAt : undefined,
+          verified: typeof user === "object" ? Boolean(user?.verified || user?.is_blue_verified || user?.verified_type) : undefined,
+          defaultAvatar:
+            typeof user === "object" && typeof user?.avatar === "string" ? /default_profile/.test(user.avatar) : undefined,
           createdAt: o.created_at ?? o.createdAt ?? o.date,
           likes: num(o.favorites ?? o.favorite_count ?? o.likes ?? o.likeCount ?? o.public_metrics?.like_count),
           reposts: num(o.retweets ?? o.retweet_count ?? o.retweetCount ?? o.public_metrics?.retweet_count),
@@ -76,15 +80,6 @@ export function extractPosts(raw: unknown): Post[] {
   return out;
 }
 
-// Debug helper: the first object that looks like a post, to see which account fields the provider sends
-function firstTweetLike(node: any, depth = 0): any {
-  if (!node || depth > 8 || typeof node !== "object") return null;
-  if (Array.isArray(node)) { for (const n of node) { const f = firstTweetLike(n, depth + 1); if (f) return f; } return null; }
-  if (typeof (node.text ?? node.full_text) === "string") return node;
-  for (const v of Object.values(node)) { const f = firstTweetLike(v, depth + 1); if (f) return f; }
-  return null;
-}
-
 // X returns text HTML-escaped (&amp; and friends)
 function decodeEntities(t: string) {
   return t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
@@ -93,6 +88,18 @@ function decodeEntities(t: string) {
 function num(v: unknown): number | undefined {
   const n = typeof v === "string" ? Number(v) : v;
   return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+}
+
+const DAY = 86_400_000;
+
+/** Sorts a posting account into a trust tier, from the fields X actually gives us. */
+export function tierFor(a: { followers?: number; ageDays?: number; defaultAvatar?: boolean }): Account["tier"] {
+  const f = a.followers;
+  const age = a.ageDays;
+  if (a.defaultAvatar || (age !== undefined && age < 30 && (f ?? 0) < 50)) return "fake";
+  if ((age !== undefined && age < 90) || (f !== undefined && f < 200)) return "new";
+  if ((f ?? 0) >= 1000 && (age === undefined || age >= 365)) return "established";
+  return "regular";
 }
 
 /** Turns raw posts into the numbers the verdict is built from. */
@@ -121,6 +128,27 @@ export function socialSignals(posts: Post[]): SocialSignals {
     ? eng.reduce((a, p) => a + (p.likes ?? 0) + (p.reposts ?? 0), 0) / eng.length
     : null;
 
+  // One row per posting account
+  const accountMap = new Map<string, Account & { defaultAvatar?: boolean }>();
+  for (const p of posts) {
+    const existing = accountMap.get(p.author);
+    if (existing) { existing.posts++; continue; }
+    const joined = p.authorJoined ? Date.parse(p.authorJoined) : NaN;
+    const ageDays = Number.isFinite(joined) ? Math.max(0, Math.floor((Date.now() - joined) / DAY)) : undefined;
+    accountMap.set(p.author, { handle: p.author, posts: 1, followers: p.followers, ageDays, verified: p.verified, defaultAvatar: p.defaultAvatar, tier: "regular" });
+  }
+  const tiers: Record<Account["tier"], number> = { established: 0, regular: 0, new: 0, fake: 0 };
+  const accounts: Account[] = [];
+  for (const a of accountMap.values()) {
+    a.tier = tierFor(a);
+    tiers[a.tier]++;
+    const { defaultAvatar, ...row } = a;
+    accounts.push(row);
+  }
+  accounts.sort((a, b) => b.posts - a.posts || (b.followers ?? 0) - (a.followers ?? 0));
+  const aged = accounts.filter((a) => a.ageDays !== undefined);
+  const newAccountShare = aged.length >= 5 ? aged.filter((a) => (a.ageDays ?? 0) < 90).length / aged.length : null;
+
   return {
     posts: posts.length,
     uniqueAuthors: byAuthor.size,
@@ -128,6 +156,9 @@ export function socialSignals(posts: Post[]): SocialSignals {
     smallAccountShare: withFollowers.length >= 5 ? small / withFollowers.length : null,
     duplicateShare: posts.length ? dupes / posts.length : 0,
     avgEngagement,
+    tiers,
+    newAccountShare,
+    accounts: accounts.slice(0, 25),
     samples: posts.slice(0, 8),
   };
 }

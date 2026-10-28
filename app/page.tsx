@@ -5,7 +5,7 @@ import { createWalletClient, custom, type WalletClient } from "viem";
 import { celo } from "viem/chains";
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
-import { CHAINS, type Chain, type Report } from "@/lib/types";
+import { CHAINS, type AccountTier, type Chain, type Report } from "@/lib/types";
 
 type Config = { mode: "demo" | "test" | "live"; mock: boolean; paid: boolean; priceUsd: number; freeChecks: number; freeLeft: number | null };
 
@@ -18,6 +18,60 @@ function shareUrl(r: Report) {
   const text = `Ran ${who} through traction/check.\n\n${r.verdict.score}/100, ${r.verdict.label.toLowerCase()}.\n\nCheck any project before you ape:`;
   const url = typeof window !== "undefined" ? window.location.origin : "";
   return `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+}
+
+const TIERS: { key: AccountTier; label: string; hint: string }[] = [
+  { key: "established", label: "Established", hint: "1k+ followers, over a year old" },
+  { key: "regular", label: "Regular", hint: "200+ followers, over 3 months old" },
+  { key: "new", label: "New or tiny", hint: "under 3 months old or under 200 followers" },
+  { key: "fake", label: "Likely fake", hint: "default picture, or brand new with no followers" },
+];
+
+function compact(n?: number) {
+  if (n === undefined) return "?";
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n);
+}
+
+function age(days?: number) {
+  if (days === undefined) return "?";
+  if (days < 60) return `${days}d`;
+  if (days < 730) return `${Math.floor(days / 30)}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
+function WhoIsPosting({ social }: { social: Report["social"] & {} }) {
+  const total = TIERS.reduce((a, t) => a + social.tiers[t.key], 0) || 1;
+  const [open, setOpen] = useState(false);
+  const shown = open ? social.accounts : social.accounts.slice(0, 6);
+  return (
+    <div className="card">
+      <h3>Who's posting</h3>
+      <div className="tierbar" role="img" aria-label="Share of posting accounts by quality">
+        {TIERS.map((t) => social.tiers[t.key] > 0 && (
+          <span key={t.key} className={`tier-${t.key}`} style={{ width: `${(social.tiers[t.key] / total) * 100}%` }} />
+        ))}
+      </div>
+      <ul className="tierlegend">
+        {TIERS.map((t) => (
+          <li key={t.key} title={t.hint}>
+            <i className={`tier-${t.key}`} /> {t.label} <b>{social.tiers[t.key]}</b>
+          </li>
+        ))}
+      </ul>
+      <div className="accounts">
+        {shown.map((a) => (
+          <a key={a.handle} className="acct" href={`https://x.com/${a.handle}`} target="_blank" rel="noreferrer">
+            <span className="acct-name">@{a.handle}{a.verified && <span className="tick" title="Verified">✓</span>}</span>
+            <span className="acct-meta">{compact(a.followers)} followers · {age(a.ageDays)} old{a.posts > 1 ? ` · ${a.posts} posts` : ""}</span>
+            <span className={`pill tier-pill tier-${a.tier}`}>{TIERS.find((t) => t.key === a.tier)!.label}</span>
+          </a>
+        ))}
+      </div>
+      {social.accounts.length > 6 && (
+        <button className="small more" onClick={() => setOpen(!open)}>{open ? "Show fewer" : `Show all ${social.accounts.length}`}</button>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -172,6 +226,8 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {report.social && report.social.accounts?.length > 0 && <WhoIsPosting social={report.social} />}
 
           {report.chain && (
             <div className="card">

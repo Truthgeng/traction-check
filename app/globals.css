@@ -77,3 +77,23 @@ ul.list.pos li::before { background: var(--good); }
   display: block; text-align: center; text-decoration: none; font-weight: 600;
   border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 12px;
 }
+
+/* Who's posting */
+.tierbar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--line); gap: 2px; }
+.tierbar span { display: block; min-width: 4px; }
+.tier-established { background: var(--good); }
+.tier-regular { background: #7fb2a0; }
+.tier-new { background: var(--mid); }
+.tier-fake { background: var(--bad); }
+.tierlegend { list-style: none; padding: 0; margin: 12px 0 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); }
+.tierlegend li { display: flex; align-items: center; gap: 6px; }
+.tierlegend b { color: var(--text); font-family: var(--mono); }
+.tierlegend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.accounts { display: grid; gap: 6px; }
+.acct { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; text-decoration: none; color: var(--text); }
+.acct:hover { border-color: var(--muted); }
+.acct-name { font: 600 14px var(--mono); overflow-wrap: anywhere; }
+.acct-meta { grid-column: 1; font-size: 12px; color: var(--muted); }
+.tick { color: #4ea1ff; margin-left: 4px; }
+.tier-pill { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #0b0d0c; border: none; font-weight: 600; white-space: nowrap; }
+.more { margin-top: 10px; width: 100%; }

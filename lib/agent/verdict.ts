@@ -23,6 +23,19 @@ export function ruleScore(social: SocialSignals | null, chain: ChainSignals | nu
     if (social.smallAccountShare !== null && social.smallAccountShare > 0.6) {
       score -= 10; flags.push(`${pct(social.smallAccountShare)} of posts are from accounts under 200 followers`);
     }
+    // Who is posting
+    const total = social.tiers.established + social.tiers.regular + social.tiers.new + social.tiers.fake;
+    if (total >= 5) {
+      const fakeShare = social.tiers.fake / total;
+      const lowShare = (social.tiers.fake + social.tiers.new) / total;
+      const goodShare = social.tiers.established / total;
+      if (fakeShare > 0.2) { score -= 12; flags.push(`${social.tiers.fake} of ${total} posting accounts look fake (default picture or brand new with no followers)`); }
+      else if (lowShare > 0.6) { score -= 8; flags.push(`${pct(lowShare)} of posting accounts are new or tiny`); }
+      if (goodShare >= 0.4) { score += 6; positives.push(`${social.tiers.established} established accounts are talking about it`); }
+    }
+    if (social.newAccountShare !== null && social.newAccountShare > 0.4) {
+      score -= 8; flags.push(`${pct(social.newAccountShare)} of posting accounts were created in the last 90 days`);
+    }
     if (social.avgEngagement !== null && social.avgEngagement < 1 && social.posts > 15) {
       score -= 5; flags.push("High post count but almost no likes or reposts");
     }
@@ -98,7 +111,7 @@ Rule-based score (0-100, higher = more organic): ${base.score}
 Flags: ${JSON.stringify(base.flags)}
 Positives: ${JSON.stringify(base.positives)}
 
-X signals: ${social ? JSON.stringify({ ...social, samples: undefined }) : "none"}
+X signals: ${social ? JSON.stringify({ ...social, samples: undefined, accounts: undefined }) : "none"}
 Sample posts:
 ${social?.samples.map((p) => `- @${p.author}${p.followers !== undefined ? ` (${p.followers} followers)` : ""}: ${p.text.slice(0, 200).replace(/\s+/g, " ")}`).join("\n") || "none"}
 
