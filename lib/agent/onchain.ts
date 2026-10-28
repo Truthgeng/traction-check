@@ -2,10 +2,9 @@ import { paidPost, GATEWAY } from "./buy";
 import type { Chain, ChainSignals, PaidCall } from "@/lib/types";
 
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-const WINDOW_HOURS = 24;
-// Stop going further back once this many transfers are read. Reading always starts at
-// the NEWEST block, so two checks minutes apart see the same recent activity.
-const MAX_TRANSFERS = 15_000;
+const WINDOW_HOURS = 12;
+// Every check reads the same fixed window ending at the newest block, so two checks
+// minutes apart look at almost exactly the same activity.
 
 type Transfer = { from: string; to: string };
 /** What a reader got: the transfers, and how many hours back it actually reached */
@@ -60,7 +59,6 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Re
       if (log.topics?.length >= 3) transfers.push({ from: topicToAddr(log.topics[1]), to: topicToAddr(log.topics[2]) });
     }
     reachedBlock = chunks[i].from;
-    if (transfers.length >= MAX_TRANSFERS) break;
   }
   return { transfers, coveredHours: ((latest - reachedBlock) * CELO_BLOCK_SECONDS) / 3600 };
 }
@@ -139,24 +137,37 @@ async function sqdTransfers(chain: Chain, contract: string): Promise<Read> {
   const head = await headRes.json();
   const toBlock = Number(head.number ?? head.block_number ?? head.height);
 
-  // Work backwards in 2-hour slices from the newest block, and stop when we have
-  // enough transfers or time runs out. Only fully read slices count.
-  const blocksPerHour = Math.max(1, (toBlock - fromBlock) / WINDOW_HOURS);
-  const SLICE_HOURS = 2;
-  const slice = Math.max(1, Math.round(blocksPerHour * SLICE_HOURS));
+  // The same fixed window every check: the last 12 hours, cut into 6 slices of 2 hours
+  // that are read side by side (4 at a time, inside SQD's free rate limit).
+  // If a slice can't be read, we keep only the unbroken run of slices from the newest
+  // one back, so the hours we report are exactly the hours we read.
+  const SLICES = 6;
+  const slice = Math.max(1, Math.ceil((toBlock - fromBlock + 1) / SLICES));
+  const ranges = Array.from({ length: SLICES }, (_, i) => {
+    const to = toBlock - i * slice;
+    return { from: Math.max(fromBlock, to - slice + 1), to };
+  }).filter((x) => x.to >= x.from);
   const deadline = Date.now() + 25_000; // stay well inside the 60s function limit
 
+  const results: { transfers: Transfer[]; complete: boolean }[] = new Array(ranges.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      while (next < ranges.length) {
+        const i = next++;
+        results[i] = await sqdRange(ds, contract, ranges[i].from, ranges[i].to, deadline);
+      }
+    }),
+  );
+
   const transfers: Transfer[] = [];
-  let coveredHours = 0;
-  for (let to = toBlock; to > fromBlock; to -= slice) {
-    const from = Math.max(fromBlock, to - slice + 1);
-    const part = await sqdRange(ds, contract, from, to, deadline);
-    if (!part.complete) break;
+  let slicesRead = 0;
+  for (const part of results) {
+    if (!part?.complete) break;
     transfers.push(...part.transfers);
-    coveredHours += (to - from + 1) / blocksPerHour;
-    if (transfers.length >= MAX_TRANSFERS) break;
+    slicesRead++;
   }
-  return { transfers, coveredHours };
+  return { transfers, coveredHours: (slicesRead / ranges.length) * WINDOW_HOURS };
 }
 
 // ---------------------------------------------------------------------------
