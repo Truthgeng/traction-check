@@ -41,7 +41,9 @@ export function ruleScore(social: SocialSignals | null, chain: ChainSignals | nu
     }
     const pingRatio = chain.pingPongPairs / Math.max(1, chain.uniqueSenders);
     if (chain.pingPongPairs >= 5 && pingRatio > 0.15) {
-      score -= 12; flags.push(`${chain.pingPongPairs} wallet pairs sending back and forth to each other`);
+      // more than one back-and-forth pair per wallet means the same wallets keep cycling tokens
+      score -= pingRatio > 1 ? 25 : 12;
+      flags.push(`${chain.pingPongPairs} wallet pairs sending back and forth to each other`);
     }
   } else if (chain) {
     flags.push(`Fewer than 10 token transfers in ${chain.windowHours}h`);

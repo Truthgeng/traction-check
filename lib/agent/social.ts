@@ -45,7 +45,8 @@ export function extractPosts(raw: unknown): Post[] {
     }
     if (typeof node !== "object") return;
     const o = node as Record<string, any>;
-    const text = o.full_text ?? o.text ?? o.content ?? o.legacy?.full_text;
+    const rawText = o.full_text ?? o.text ?? o.content ?? o.legacy?.full_text;
+    const text = typeof rawText === "string" ? decodeEntities(rawText) : rawText;
     const user = o.user_info ?? o.author ?? o.user ?? o.core?.user_results?.result?.legacy;
     const author =
       (typeof user === "string" ? user : user?.screen_name ?? user?.username ?? user?.userName ?? user?.handle) ??
@@ -72,6 +73,11 @@ export function extractPosts(raw: unknown): Post[] {
 
   visit(raw, 0);
   return out;
+}
+
+// X returns text HTML-escaped (&amp; and friends)
+function decodeEntities(t: string) {
+  return t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
 
 function num(v: unknown): number | undefined {

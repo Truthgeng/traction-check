@@ -154,11 +154,23 @@ export function summarise(chain: Chain, transfers: Transfer[], source: ChainSign
   const top10 = new Set([...touch.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([a]) => a));
   const viaTop = transfers.filter((t) => top10.has(t.from) || top10.has(t.to)).length;
 
-  // Wallets sending to each other both ways, a common wash pattern
+  // Wallets sending to each other both ways, a common wash pattern.
+  // Pools, routers and exchanges trade both ways with everyone, so an address that
+  // deals with a large number of DIFFERENT wallets is treated as a hub and left out.
+  // A closed ring of bots only ever deals with its own few members, so it stays counted.
+  const counterparties = new Map<string, Set<string>>();
+  for (const t of transfers) {
+    if (!counterparties.has(t.from)) counterparties.set(t.from, new Set());
+    if (!counterparties.has(t.to)) counterparties.set(t.to, new Set());
+    counterparties.get(t.from)!.add(t.to);
+    counterparties.get(t.to)!.add(t.from);
+  }
+  const hubThreshold = Math.max(50, Math.floor(counterparties.size * 0.1));
+  const hubs = new Set([...counterparties.entries()].filter(([, c]) => c.size >= hubThreshold).map(([a]) => a));
   let pingPong = 0;
   for (const p of pairs) {
     const [a, b] = p.split(">");
-    if (a < b && pairs.has(`${b}>${a}`)) pingPong++;
+    if (a < b && !hubs.has(a) && !hubs.has(b) && pairs.has(`${b}>${a}`)) pingPong++;
   }
 
   return {
