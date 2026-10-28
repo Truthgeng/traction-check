@@ -7,7 +7,7 @@ import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
 import { CHAINS, type Chain, type Report } from "@/lib/types";
 
-type Config = { mock: boolean; paid: boolean; priceUsd: number };
+type Config = { mode: "demo" | "test" | "live"; mock: boolean; paid: boolean; priceUsd: number };
 
 declare global {
   interface Window { ethereum?: any }
@@ -31,7 +31,7 @@ export default function Home() {
   const [report, setReport] = useState<Report | null>(null);
 
   useEffect(() => {
-    fetch("/api/config").then((r) => r.json()).then(setConfig).catch(() => setConfig({ mock: true, paid: false, priceUsd: 0 }));
+    fetch("/api/config").then((r) => r.json()).then(setConfig).catch(() => setConfig({ mode: "demo", mock: true, paid: false, priceUsd: 0 }));
     // MiniPay connects on its own
     if (typeof window !== "undefined" && window.ethereum?.isMiniPay) connect();
   }, []);
@@ -104,7 +104,8 @@ export default function Home() {
       <p className="lede">Paste a project. The agent reads its X mentions and its onchain activity, then tells you if the traction looks real or farmed.</p>
 
       <div className="card">
-        {config?.mock && <div className="banner">Demo mode. Results use sample data, nothing is charged.</div>}
+        {config?.mode === "demo" && <div className="banner">Demo mode. Results use sample data, nothing is charged.</div>}
+        {config?.mode === "test" && <div className="banner">Test mode. Real X data, paid with test funds. Free for you.</div>}
         <div className="field">
           <label htmlFor="h">X handle</label>
           <input id="h" placeholder="@project" value={handle} onChange={(e) => setHandle(e.target.value)} autoComplete="off" />
@@ -172,7 +173,7 @@ export default function Home() {
                   <span>{c.service}</span>
                   <span>
                     ${(Number(c.amountAtomic) / 1e6).toFixed(3)}{" "}
-                    {c.txHash ? <a href={`https://celoscan.io/tx/${c.txHash}`} target="_blank" rel="noreferrer">tx</a> : c.outcome}
+                    {c.txHash ? <a href={c.network === "celo-sepolia" ? `https://celo-sepolia.blockscout.com/tx/${c.txHash}` : `https://celoscan.io/tx/${c.txHash}`} target="_blank" rel="noreferrer">{c.network === "celo-sepolia" ? "test tx" : "tx"}</a> : c.outcome}
                   </span>
                 </div>
               ))}

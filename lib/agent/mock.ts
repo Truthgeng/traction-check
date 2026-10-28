@@ -82,6 +82,7 @@ export function mockReport(input: CheckInput): Report {
     },
     paidCalls,
     mock: true,
+    mode: "demo",
     generatedAt: now,
   };
 }

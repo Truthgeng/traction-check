@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { withX402, x402ResourceServer } from "@x402/next";
 import { HTTPFacilitatorClient, type RouteConfig } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { runCheck, isMock } from "@/lib/agent/run";
+import { runCheck } from "@/lib/agent/run";
+import { isMock, isSandbox } from "@/lib/agent/mode";
 import { CHAINS, type CheckInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -50,7 +51,7 @@ const USDT = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e";
 function paidHandler() {
   const payTo = process.env.PAY_TO as `0x${string}` | undefined;
   const apiKey = process.env.X402_API_KEY;
-  if (isMock() || !payTo || !apiKey) return handler;
+  if (isMock() || isSandbox() || !payTo || !apiKey) return handler;
 
   const facilitator = new HTTPFacilitatorClient({
     url: "https://api.x402.celo.org",

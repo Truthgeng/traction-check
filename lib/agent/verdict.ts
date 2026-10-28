@@ -60,6 +60,21 @@ function label(score: number, evidence: number): Verdict["label"] {
   return "Looks farmed";
 }
 
+/** Verdict from the rules alone, with a plain summary. Used in test mode and as the LLM fallback. */
+export function ruleVerdict(social: SocialSignals | null, chain: ChainSignals | null): Verdict {
+  const base = ruleScore(social, chain);
+  const l = label(base.score, base.evidence);
+  const summary =
+    l === "Not enough data"
+      ? "Not enough recent posts or transfers to judge this project yet."
+      : l === "Looks organic"
+        ? "Activity is spread across many different accounts and wallets, with no strong signs of farming."
+        : l === "Looks farmed"
+          ? "Most of the activity comes from a small group of accounts or wallets, which is a common sign of farmed traction."
+          : "Some signals look real and some look manufactured. Check the red flags before trusting the hype.";
+  return { score: base.score, label: l, summary, flags: base.flags, positives: base.positives };
+}
+
 /**
  * Step 2: Cencori (LLM inference, paid through buy) reads the numbers plus
  * sample posts and writes the plain-language verdict.
@@ -117,13 +132,7 @@ Reply with JSON only, no markdown:
       positives: base.positives,
     };
   } catch {
-    // LLM failed or replied badly: fall back to the rule score, never retry a paid call
-    return {
-      score: base.score,
-      label: label(base.score, base.evidence),
-      summary: "Summary unavailable, score is based on the raw signals only.",
-      flags: base.flags,
-      positives: base.positives,
-    };
+    // LLM failed or replied badly: fall back to the rules, never retry a paid call
+    return ruleVerdict(social, chain);
   }
 }

@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { isMock } from "@/lib/agent/run";
+import { mode } from "@/lib/agent/mode";
 
-/** Tells the page whether checks cost money right now, and how much. */
+/** Tells the page which mode it is in and what a check costs. */
 export async function GET() {
-  const paid = !isMock() && !!process.env.PAY_TO && !!process.env.X402_API_KEY;
+  const m = mode();
+  const paid = m === "live" && !!process.env.PAY_TO && !!process.env.X402_API_KEY;
   const atomic = Number(process.env.CHECK_PRICE_ATOMIC || "50000");
-  return NextResponse.json({ mock: isMock(), paid, priceUsd: atomic / 1_000_000 });
+  return NextResponse.json({ mode: m, mock: m === "demo", paid, priceUsd: atomic / 1_000_000 });
 }

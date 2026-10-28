@@ -22,6 +22,7 @@ export type PaidCall = {
   amountAtomic: string;
   txHash?: string;
   outcome: "confirmed" | "rejected" | "ambiguous" | "mock";
+  network?: "celo" | "celo-sepolia";
   at: string;
 };
 
@@ -71,5 +72,6 @@ export type Report = {
   verdict: Verdict;
   paidCalls: PaidCall[];
   mock: boolean;
+  mode: "demo" | "test" | "live";
   generatedAt: string;
 };

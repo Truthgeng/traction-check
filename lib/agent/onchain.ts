@@ -64,14 +64,15 @@ const hex = (n: number) => "0x" + n.toString(16);
 // Other chains: SQD through the buy gateway (free, no payment)
 // ---------------------------------------------------------------------------
 
-const SQD_DATASET: Record<Exclude<Chain, "celo">, string> = {
+const SQD_DATASET: Record<Chain, string> = {
+  celo: "celo-mainnet",
   base: "base-mainnet",
   ethereum: "ethereum-mainnet",
   arbitrum: "arbitrum-one",
   bsc: "binance-mainnet",
 };
 
-async function sqdTransfers(chain: Exclude<Chain, "celo">, contract: string): Promise<Transfer[]> {
+async function sqdTransfers(chain: Chain, contract: string): Promise<Transfer[]> {
   const ds = `${GATEWAY}/sqd/datasets/${SQD_DATASET[chain]}`;
   const since = Math.floor(Date.now() / 1000) - WINDOW_HOURS * 3600;
 
@@ -120,9 +121,17 @@ async function sqdTransfers(chain: Exclude<Chain, "celo">, contract: string): Pr
 
 // ---------------------------------------------------------------------------
 
-export async function chainSignals(chain: Chain, contract: string, receipts: PaidCall[]): Promise<ChainSignals> {
-  const transfers = chain === "celo" ? await celoTransfers(contract, receipts) : await sqdTransfers(chain, contract);
-  return summarise(chain, transfers, chain === "celo" ? "chainstack" : "sqd");
+export async function chainSignals(
+  chain: Chain,
+  contract: string,
+  receipts: PaidCall[],
+  opts: { paidCelo: boolean } = { paidCelo: true },
+): Promise<ChainSignals> {
+  // Celo reads are paid through Chainstack in live mode. Chainstack has no test
+  // network on buy, so test mode reads Celo through the free SQD route instead.
+  const useChainstack = chain === "celo" && opts.paidCelo;
+  const transfers = useChainstack ? await celoTransfers(contract, receipts) : await sqdTransfers(chain, contract);
+  return summarise(chain, transfers, useChainstack ? "chainstack" : "sqd");
 }
 
 export function summarise(chain: Chain, transfers: Transfer[], source: ChainSignals["source"]): ChainSignals {

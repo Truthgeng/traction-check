@@ -21,11 +21,15 @@ export async function searchX(
     process.env.MAX_X_SEARCH || "0.02",
     receipts,
   );
-  return extractPosts(raw);
+  const posts = extractPosts(raw);
+  // If nothing was recognised, log the start of the reply so the format can be fixed from the Vercel logs
+  if (!posts.length) console.warn(`x search (${type}) returned no recognisable posts:`, JSON.stringify(raw).slice(0, 800));
+  return posts;
 }
 
 /**
- * The provider's response shape is not documented, so this walks the result
+ * The provider (TikHub, per the buy catalog) does not publish its response shape,
+ * so this walks the result
  * and picks out anything that looks like a post. Field names cover the common
  * X API and scraper shapes.
  */
@@ -42,13 +46,13 @@ export function extractPosts(raw: unknown): Post[] {
     if (typeof node !== "object") return;
     const o = node as Record<string, any>;
     const text = o.full_text ?? o.text ?? o.content ?? o.legacy?.full_text;
-    const user = o.author ?? o.user ?? o.core?.user_results?.result?.legacy;
+    const user = o.user_info ?? o.author ?? o.user ?? o.core?.user_results?.result?.legacy;
     const author =
       (typeof user === "string" ? user : user?.screen_name ?? user?.username ?? user?.userName ?? user?.handle) ??
       o.author_username ?? o.username ?? o.screen_name;
 
     if (typeof text === "string" && typeof author === "string") {
-      const id = String(o.id_str ?? o.id ?? o.rest_id ?? `${author}:${text.slice(0, 40)}`);
+      const id = String(o.tweet_id ?? o.id_str ?? o.id ?? o.rest_id ?? `${author}:${text.slice(0, 40)}`);
       if (!seen.has(id)) {
         seen.add(id);
         out.push({
@@ -57,8 +61,8 @@ export function extractPosts(raw: unknown): Post[] {
           author: author.replace(/^@/, "").toLowerCase(),
           followers: num(user?.followers_count ?? user?.followers ?? user?.followersCount ?? o.author_followers),
           createdAt: o.created_at ?? o.createdAt ?? o.date,
-          likes: num(o.favorite_count ?? o.likes ?? o.likeCount ?? o.public_metrics?.like_count),
-          reposts: num(o.retweet_count ?? o.retweets ?? o.retweetCount ?? o.public_metrics?.retweet_count),
+          likes: num(o.favorites ?? o.favorite_count ?? o.likes ?? o.likeCount ?? o.public_metrics?.like_count),
+          reposts: num(o.retweets ?? o.retweet_count ?? o.retweetCount ?? o.public_metrics?.retweet_count),
         });
       }
       return;

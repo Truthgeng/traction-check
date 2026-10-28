@@ -29,7 +29,15 @@ cp .env.example .env.local
 npm run dev
 ```
 
-With `MOCK=1` (the default) everything runs on sample data. No wallet, no payments.
+## Modes
+
+| Mode | Settings | What happens |
+|---|---|---|
+| Demo | `MOCK=1` (default) | Sample data, nothing paid |
+| Test | `MOCK=0`, `SANDBOX=1`, `SANDBOX_PRIVATE_KEY` | Real X data and real onchain reads. The agent pays buy with free test USDC on Celo Sepolia, topped up by the gateway faucet. Users pay nothing. No LLM summary (Cencori has no test network). |
+| Live | `MOCK=0`, `SANDBOX=0`, plus the live settings below | Everything real on Celo mainnet |
+
+The test wallet is for test funds only. Never send real money to it.
 
 ## Going live
 
