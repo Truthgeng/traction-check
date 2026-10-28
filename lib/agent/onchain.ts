@@ -72,21 +72,38 @@ const SQD_DATASET: Record<Chain, string> = {
   bsc: "binance-mainnet",
 };
 
+/** SQD is free and unpaid, so retrying it is safe. Waits out its rate limit (Retry-After). */
+async function sqdFetch(url: string, init?: RequestInit, tries = 4): Promise<Response> {
+  let last: Response | null = null;
+  for (let i = 0; i < tries; i++) {
+    try {
+      last = await fetch(url, init);
+      if (last.ok || (last.status < 500 && last.status !== 429)) return last;
+    } catch { /* network blip, try again */ }
+    const wait = Number(last?.headers.get("retry-after")) || 1 + i * 2;
+    await new Promise((res) => setTimeout(res, Math.min(wait, 8) * 1000));
+  }
+  if (last) return last;
+  throw new Error(`SQD unreachable: ${url}`);
+}
+
 async function sqdTransfers(chain: Chain, contract: string): Promise<Transfer[]> {
   const ds = `${GATEWAY}/sqd/datasets/${SQD_DATASET[chain]}`;
   const since = Math.floor(Date.now() / 1000) - WINDOW_HOURS * 3600;
 
-  const startRes = await fetch(`${ds}/timestamps/${since}/block`);
-  const headRes = await fetch(`${ds}/head`);
-  if (!startRes.ok || !headRes.ok) throw new Error(`SQD unavailable for ${chain}`);
+  const startRes = await sqdFetch(`${ds}/timestamps/${since}/block`);
+  const headRes = await sqdFetch(`${ds}/head`);
+  if (!startRes.ok || !headRes.ok) throw new Error(`SQD unavailable for ${chain} (${startRes.status}/${headRes.status})`);
   const fromBlock = Number((await startRes.json()).block_number);
   const head = await headRes.json();
   const toBlock = Number(head.number ?? head.block_number ?? head.height);
 
   const transfers: Transfer[] = [];
   let cursor = fromBlock;
-  for (let page = 0; page < 40 && cursor <= toBlock; page++) {
-    const res = await fetch(`${ds}/stream`, {
+  // stay well inside the 60s function limit: stop reading after 25s and judge what we have
+  const deadline = Date.now() + 25_000;
+  for (let page = 0; page < 40 && cursor <= toBlock && Date.now() < deadline; page++) {
+    const res = await sqdFetch(`${ds}/stream`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

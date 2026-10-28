@@ -73,7 +73,9 @@ export function ruleVerdict(social: SocialSignals | null, chain: ChainSignals | 
         ? "Activity is spread across many different accounts and wallets, with no strong signs of farming."
         : l === "Looks farmed"
           ? "Most of the activity comes from a small group of accounts or wallets, which is a common sign of farmed traction."
-          : "Some signals look real and some look manufactured. Check the red flags before trusting the hype.";
+          : base.flags.length
+            ? "Some signals look real and some look manufactured. Check the red flags before trusting the hype."
+            : "Nothing stands out as farmed, but there isn't enough strong activity to call it clearly organic either.";
   return { score: base.score, label: l, summary, flags: base.flags, positives: base.positives };
 }
 
