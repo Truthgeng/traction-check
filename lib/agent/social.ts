@@ -50,7 +50,10 @@ export async function fetchProfile(handle: string, receipts: PaidCall[]): Promis
   const visit = (node: any, depth: number) => {
     if (found || !node || typeof node !== "object" || depth > 8) return;
     if (Array.isArray(node)) { for (const n of node) visit(n, depth + 1); return; }
-    const sn = node.screen_name ?? node.username ?? node.core?.screen_name ?? node.legacy?.screen_name;
+    // TikHub puts the username in "profile"; other X shapes use screen_name / username
+    const sn =
+      node.screen_name ?? node.username ?? node.core?.screen_name ?? node.legacy?.screen_name ??
+      (typeof node.profile === "string" ? node.profile : undefined);
     if (typeof sn === "string" && sn.toLowerCase() === want) {
       found = { ...(node.legacy ?? {}), ...(node.core ?? {}), ...node };
       return;
@@ -58,13 +61,19 @@ export async function fetchProfile(handle: string, receipts: PaidCall[]): Promis
     for (const v of Object.values(node)) visit(v, depth + 1);
   };
   visit(raw, 0);
+  // TikHub marks the account state; anything but "active" (not found, suspended) means no usable account
+  const state = (found as Record<string, any> | null)?.status ?? (raw as any)?.output?.status;
+  if (typeof state === "string" && state.toLowerCase() !== "active") return null;
   if (!found) {
     console.warn(`profile @${handle} not recognised:`, JSON.stringify(raw).slice(0, 600));
     return null;
   }
   const f = found as Record<string, any>;
+  if (f.sub_count === undefined && f.followers_count === undefined && f.followers === undefined) {
+    console.warn(`profile @${handle}: no follower field, keys:`, Object.keys(f).join(","));
+  }
   return {
-    handle: String(f.screen_name ?? f.username ?? handle),
+    handle: String(f.screen_name ?? f.username ?? (typeof f.profile === "string" ? f.profile : handle)),
     name: f.name,
     bio: typeof f.description === "string" ? f.description : typeof f.desc === "string" ? f.desc : undefined,
     followers: num(f.followers_count ?? f.followers ?? f.sub_count ?? f.normal_followers_count),
