@@ -175,8 +175,8 @@ export default function Home() {
         {config?.mode === "demo" && <div className="banner">Demo mode. Results use sample data, nothing is charged.</div>}
         {config?.mode === "test" && <div className="banner">Test mode. Real X data, paid with test funds. Free for you.</div>}
         <div className="field">
-          <label htmlFor="h">X handle</label>
-          <input id="h" placeholder="@project" value={handle} onChange={(e) => setHandle(e.target.value)} autoComplete="off" />
+          <label htmlFor="h">Project's X handle</label>
+          <input id="h" placeholder="@celo or x.com/celo" value={handle} onChange={(e) => setHandle(e.target.value)} autoComplete="off" />
         </div>
         <div className="field">
           <label htmlFor="c">Token contract (optional)</label>
@@ -199,6 +199,23 @@ export default function Home() {
 
       {report && (
         <section className="result">
+          {report.profile && (
+            <a className="card profile" href={`https://x.com/${report.profile.handle}`} target="_blank" rel="noreferrer">
+              <span className="profile-label">Checked</span>
+              <span className="profile-name">
+                {report.profile.name || report.profile.handle}
+                {report.profile.verified && <span className="tick" title="Verified">✓</span>}
+              </span>
+              <span className="profile-handle">
+                @{report.profile.handle}
+                {report.profile.followers !== undefined && <> · {compact(report.profile.followers)} followers</>}
+                {report.profile.joined && !Number.isNaN(Date.parse(report.profile.joined)) && (
+                  <> · joined {new Date(report.profile.joined).toLocaleDateString(undefined, { month: "short", year: "numeric" })}</>
+                )}
+              </span>
+              {report.profile.bio && <span className="profile-bio">{report.profile.bio}</span>}
+            </a>
+          )}
           <div className="card verdict">
             <div className={`score ${tone(report.verdict.score)}`}>{report.verdict.score}<small>/100</small></div>
             <div>
@@ -222,7 +239,13 @@ export default function Home() {
 
           {report.social && (
             <div className="card">
-              <h3>On X, last 7 days</h3>
+              <h3>Posts tagging @{report.profile?.handle ?? report.input.handle}, last 7 days</h3>
+              {report.postsFound !== undefined && report.postsFound > (report.postsTagging ?? 0) && (
+                <p className="note">
+                  X returned {report.postsFound} posts. {report.postsTagging} actually tag the project and are counted.
+                  The rest only matched the name or were replies in someone else's thread.
+                </p>
+              )}
               <div className="stats">
                 <div className="stat"><b>{report.social.posts}</b><span>posts</span></div>
                 <div className="stat"><b>{report.social.uniqueAuthors}</b><span>accounts</span></div>

@@ -77,6 +77,7 @@ export function mockReport(input: CheckInput): Report {
 
   return {
     input,
+    profile: input.handle ? { handle: input.handle, name: `${input.handle} (sample)`, followers: farmed ? 1840 : 24600, bio: "Demo profile. Real lookups run in test and live mode." } : null,
     social,
     chain,
     verdict: {

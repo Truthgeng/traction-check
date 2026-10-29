@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withX402, x402ResourceServer } from "@x402/next";
 import { HTTPFacilitatorClient, type RouteConfig } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { runCheck } from "@/lib/agent/run";
+import { runCheck, CheckError } from "@/lib/agent/run";
 import { isMock, isSandbox } from "@/lib/agent/mode";
 import { CHAINS, type CheckInput } from "@/lib/types";
 import { COOKIE, freeLeft, nextCookie, takeDailySlot } from "@/lib/free";
@@ -12,7 +12,10 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 function parseInput(body: any): CheckInput | string {
-  const handle = typeof body?.handle === "string" ? body.handle.trim().replace(/^@/, "") : "";
+  // Accept "@name", "name", or a pasted profile link like https://x.com/name/status/123
+  let handle = typeof body?.handle === "string" ? body.handle.trim() : "";
+  const link = handle.match(/^(?:https?:\/\/)?(?:www\.|mobile\.)?(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})/i);
+  handle = (link ? link[1] : handle).replace(/^@/, "");
   const contract = typeof body?.contract === "string" ? body.contract.trim() : "";
   const chain = CHAINS.some((c) => c.id === body?.chain) ? body.chain : "celo";
   if (!handle && !contract) return "Enter an X handle, a contract address, or both.";
@@ -37,6 +40,7 @@ const handler = async (req: NextRequest): Promise<NextResponse<unknown>> => {
     const report = await runCheck(input, { skipCache });
     return NextResponse.json(report);
   } catch (e) {
+    if (e instanceof CheckError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error(e);
     // status >= 400 means withX402 does NOT settle the user's payment
     return NextResponse.json({ error: "The check failed. You were not charged." }, { status: 502 });

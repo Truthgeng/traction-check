@@ -16,7 +16,7 @@ export type CheckInput = {
 
 /** One paid call the agent made through buy. This is the proof judges look for. */
 export type PaidCall = {
-  service: "x-search" | "cencori" | "chainstack";
+  service: "x-search" | "x-profile" | "cencori" | "chainstack";
   url: string;
   token: string;
   amountAtomic: string;
@@ -37,6 +37,19 @@ export type Post = {
   createdAt?: string;
   likes?: number;
   reposts?: number;
+  /** Handles tagged in the part of the post the person actually wrote (lowercase).
+   *  Reply-chain prefixes X adds automatically are not included. */
+  bodyMentions?: string[];
+};
+
+/** The X account a check was run on, as X reports it */
+export type Profile = {
+  handle: string;
+  name?: string;
+  bio?: string;
+  followers?: number;
+  joined?: string;
+  verified?: boolean;
 };
 
 export type AccountTier = "established" | "regular" | "new" | "fake";
@@ -88,6 +101,11 @@ export type Verdict = {
 
 export type Report = {
   input: CheckInput;
+  /** The X account that was checked, confirmed by a profile lookup */
+  profile?: Profile | null;
+  /** How many posts the search returned vs how many actually tag the project */
+  postsFound?: number;
+  postsTagging?: number;
   social: SocialSignals | null;
   chain: ChainSignals | null;
   verdict: Verdict;

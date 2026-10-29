@@ -1,5 +1,5 @@
 import { paidPost } from "./buy";
-import type { Account, PaidCall, Post, SocialSignals } from "@/lib/types";
+import type { Account, PaidCall, Post, Profile, SocialSignals } from "@/lib/types";
 
 /**
  * X search through the buy gateway.
@@ -28,6 +28,49 @@ export async function searchX(
   // If nothing was recognised, log the start of the reply so the format can be fixed from the Vercel logs
   if (!posts.length) console.warn(`x search (${type}) returned no recognisable posts:`, JSON.stringify(raw).slice(0, 800));
   return { posts, next };
+}
+
+/**
+ * Looks up the X account being checked, so the report can show exactly which
+ * project it ran on. Paid call on buy (TikHub "Fetch User Profile", $0.005).
+ * Returns null when X has no such account.
+ */
+const X_PROFILE_PATH = "/v1/social/x/tools/tikhub-api-v1-twitter-web-fetch-user-profile";
+
+export async function fetchProfile(handle: string, receipts: PaidCall[]): Promise<Profile | null> {
+  const raw = await paidPost(
+    "x-profile",
+    X_PROFILE_PATH,
+    { queryParams: { screen_name: handle } },
+    process.env.MAX_X_SEARCH || "0.02",
+    receipts,
+  );
+  const want = handle.toLowerCase();
+  let found: Record<string, any> | null = null;
+  const visit = (node: any, depth: number) => {
+    if (found || !node || typeof node !== "object" || depth > 8) return;
+    if (Array.isArray(node)) { for (const n of node) visit(n, depth + 1); return; }
+    const sn = node.screen_name ?? node.username ?? node.core?.screen_name ?? node.legacy?.screen_name;
+    if (typeof sn === "string" && sn.toLowerCase() === want) {
+      found = { ...(node.legacy ?? {}), ...(node.core ?? {}), ...node };
+      return;
+    }
+    for (const v of Object.values(node)) visit(v, depth + 1);
+  };
+  visit(raw, 0);
+  if (!found) {
+    console.warn(`profile @${handle} not recognised:`, JSON.stringify(raw).slice(0, 600));
+    return null;
+  }
+  const f = found as Record<string, any>;
+  return {
+    handle: String(f.screen_name ?? f.username ?? handle),
+    name: f.name,
+    bio: typeof f.description === "string" ? f.description : typeof f.desc === "string" ? f.desc : undefined,
+    followers: num(f.followers_count ?? f.followers ?? f.sub_count ?? f.normal_followers_count),
+    joined: f.created_at ?? f.createdAt,
+    verified: Boolean(f.verified || f.is_blue_verified || f.blue_verified || f.verified_type),
+  };
 }
 
 /**
@@ -99,6 +142,7 @@ export function extractPosts(raw: unknown): Post[] {
           defaultAvatar:
             typeof user === "object" && typeof user?.avatar === "string" ? /default_profile/.test(user.avatar) : undefined,
           createdAt: o.created_at ?? o.createdAt ?? o.date,
+          bodyMentions: bodyMentions(o, text),
           likes: num(o.favorites ?? o.favorite_count ?? o.likes ?? o.likeCount ?? o.public_metrics?.like_count),
           reposts: num(o.retweets ?? o.retweet_count ?? o.retweetCount ?? o.public_metrics?.retweet_count),
         });
@@ -110,6 +154,36 @@ export function extractPosts(raw: unknown): Post[] {
 
   visit(raw, 0);
   return out;
+}
+
+/**
+ * Handles the person deliberately tagged, i.e. inside the visible body of the post.
+ * When someone replies, X puts the thread's handles in front of the text
+ * automatically ("@a @b @c actual reply"); display_text_range marks where the
+ * typed text starts, so tags before it are skipped.
+ */
+function bodyMentions(o: Record<string, any>, text: string): string[] {
+  const legacy = o.legacy ?? o;
+  const range: unknown = legacy.display_text_range;
+  const bodyStart = Array.isArray(range) && typeof range[0] === "number" ? range[0] : leadingMentionsEnd(text);
+  const list = legacy.entities?.user_mentions ?? legacy.entities?.mentions;
+  if (Array.isArray(list) && list.length) {
+    return list
+      .filter((m: any) => {
+        const start = Array.isArray(m.indices) ? m.indices[0] : m.start;
+        return typeof start !== "number" || start >= bodyStart;
+      })
+      .map((m: any) => String(m.screen_name ?? m.username ?? "").toLowerCase())
+      .filter(Boolean);
+  }
+  // No entity data: read the handles from the typed part of the text
+  return [...text.slice(bodyStart).matchAll(/(?:^|[^\w@])@(\w{1,15})/g)].map((m) => m[1].toLowerCase());
+}
+
+/** Where a run of leading "@a @b " reply handles ends (fallback when X gives no range). */
+function leadingMentionsEnd(text: string): number {
+  const m = text.match(/^(?:@\w{1,15}\s+)+/);
+  return m ? m[0].length : 0;
 }
 
 // X returns text HTML-escaped (&amp; and friends)

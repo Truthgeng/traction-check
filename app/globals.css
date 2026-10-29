@@ -97,3 +97,12 @@ ul.list.pos li::before { background: var(--good); }
 .tick { color: #4ea1ff; margin-left: 4px; }
 .tier-pill { grid-column: 2; grid-row: 1 / span 2; align-self: center; color: #0b0d0c; border: none; font-weight: 600; white-space: nowrap; }
 .more { margin-top: 10px; width: 100%; }
+
+/* Which account was checked */
+.profile { display: grid; gap: 4px; text-decoration: none; color: var(--text); }
+.profile:hover { border-color: var(--muted); }
+.profile-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.profile-name { font-size: 20px; font-weight: 700; }
+.profile-handle { font: 13px var(--mono); color: var(--muted); }
+.profile-bio { font-size: 14px; color: var(--muted); line-height: 1.45; margin-top: 4px; }
+.note { font-size: 13px; color: var(--muted); margin: -4px 0 12px; line-height: 1.45; }
