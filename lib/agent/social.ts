@@ -246,11 +246,22 @@ export function socialSignals(posts: Post[]): SocialSignals {
   // One row per posting account
   const accountMap = new Map<string, Account & { defaultAvatar?: boolean }>();
   for (const p of posts) {
+    // Only real X post ids can be turned into a link
+    const postId = p.id && /^\d{5,25}$/.test(p.id) ? p.id : undefined;
     const existing = accountMap.get(p.author);
-    if (existing) { existing.posts++; continue; }
+    if (existing) {
+      existing.posts++;
+      if (postId && !existing.postIds!.includes(postId)) existing.postIds!.push(postId);
+      continue;
+    }
     const joined = p.authorJoined ? Date.parse(p.authorJoined) : NaN;
     const ageDays = Number.isFinite(joined) ? Math.max(0, Math.floor((Date.now() - joined) / DAY)) : undefined;
-    accountMap.set(p.author, { handle: p.author, posts: 1, followers: p.followers, ageDays, verified: p.verified, defaultAvatar: p.defaultAvatar, tier: "regular" });
+    accountMap.set(p.author, {
+      handle: p.author, posts: 1, followers: p.followers, ageDays, verified: p.verified,
+      defaultAvatar: p.defaultAvatar, tier: "regular",
+      postIds: postId ? [postId] : [],
+      snippet: p.text.replace(/https?:\/\/\S+/g, "").replace(/\s+/g, " ").trim().slice(0, 140),
+    });
   }
   const tiers: Record<Account["tier"], number> = { established: 0, regular: 0, new: 0, fake: 0 };
   const accounts: Account[] = [];
@@ -258,6 +269,8 @@ export function socialSignals(posts: Post[]): SocialSignals {
     a.tier = tierFor(a);
     tiers[a.tier]++;
     const { defaultAvatar, ...row } = a;
+    // Newest post first (X ids grow over time)
+    row.postIds = (row.postIds ?? []).sort((x, y) => (BigInt(y) > BigInt(x) ? 1 : -1)).slice(0, 5);
     accounts.push(row);
   }
   accounts.sort((a, b) => b.posts - a.posts || (b.followers ?? 0) - (a.followers ?? 0));

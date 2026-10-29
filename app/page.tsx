@@ -59,13 +59,29 @@ function WhoIsPosting({ social }: { social: Report["social"] & {} }) {
         ))}
       </ul>
       <div className="accounts">
-        {shown.map((a) => (
-          <a key={a.handle} className="acct" href={`https://x.com/${a.handle}`} target="_blank" rel="noreferrer">
-            <span className="acct-name">@{a.handle}{a.verified && <span className="tick" title="Verified">✓</span>}</span>
-            <span className="acct-meta">{compact(a.followers)} followers · {age(a.ageDays)} old{a.posts > 1 ? ` · ${a.posts} posts` : ""}</span>
-            <span className={`pill tier-pill tier-${a.tier}`}>{TIERS.find((t) => t.key === a.tier)!.label}</span>
-          </a>
-        ))}
+        {shown.map((a) => {
+          const ids = a.postIds ?? [];
+          // Open the post that tagged the project; the profile only if X gave no post id
+          const href = ids[0] ? `https://x.com/${a.handle}/status/${ids[0]}` : `https://x.com/${a.handle}`;
+          return (
+            <div key={a.handle} className="acct">
+              <a className="acct-main" href={href} target="_blank" rel="noreferrer">
+                <span className="acct-name">@{a.handle}{a.verified && <span className="tick" title="Verified">✓</span>}</span>
+                <span className="acct-meta">{compact(a.followers)} followers · {age(a.ageDays)} old</span>
+                {a.snippet && <span className="acct-snippet">“{a.snippet}{a.snippet.length >= 140 ? "…" : ""}”</span>}
+              </a>
+              <span className={`pill tier-pill tier-${a.tier}`}>{TIERS.find((t) => t.key === a.tier)!.label}</span>
+              {ids.length > 1 && (
+                <span className="acct-posts">
+                  {ids.length} posts:
+                  {ids.map((id, i) => (
+                    <a key={id} href={`https://x.com/${a.handle}/status/${id}`} target="_blank" rel="noreferrer">{i + 1}</a>
+                  ))}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
       {social.accounts.length > 6 && (
         <button className="small more" onClick={() => setOpen(!open)}>{open ? "Show fewer" : `Show all ${social.accounts.length}`}</button>

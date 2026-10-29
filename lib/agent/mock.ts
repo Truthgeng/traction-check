@@ -29,7 +29,7 @@ export function mockReport(input: CheckInput): Report {
       const a = `bot_${Math.floor(rand() * 8)}`;
       const botNo = Number(a.split("_")[1]);
       posts.push({
-        id: `m${i}`, author: a, followers: botNo * 9, text: shill[Math.floor(rand() * shill.length)], likes: 0, reposts: rand() > 0.8 ? 1 : 0,
+        id: `21150000000000${String(i).padStart(5, "0")}`, author: a, followers: botNo * 9, text: shill[Math.floor(rand() * shill.length)], likes: 0, reposts: rand() > 0.8 ? 1 : 0,
         authorJoined: new Date(Date.now() - (5 + botNo * 9) * 86_400_000).toUTCString(), defaultAvatar: botNo % 3 === 0,
       });
     } else {
@@ -39,7 +39,7 @@ export function mockReport(input: CheckInput): Report {
       const text = `${openers[Math.floor(rand() * openers.length)]} ${real[Math.floor(rand() * real.length)]}, ${["will keep testing", "curious what others think", "still early", "worth a look", "need more data"][Math.floor(rand() * 5)]}`;
       const userNo = Number(a.split("_")[1]);
       posts.push({
-        id: `m${i}`, author: a, followers: 150 + userNo * 140, text, likes: Math.floor(rand() * 40), reposts: Math.floor(rand() * 8),
+        id: `21150000000000${String(i).padStart(5, "0")}`, author: a, followers: 150 + userNo * 140, text, likes: Math.floor(rand() * 40), reposts: Math.floor(rand() * 8),
         authorJoined: new Date(Date.now() - (60 + userNo * 45) * 86_400_000).toUTCString(), verified: userNo % 11 === 0, defaultAvatar: false,
       });
     }

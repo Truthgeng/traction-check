@@ -123,3 +123,22 @@ export async function POST(req: NextRequest) {
   }
   return res;
 }
+
+/**
+ * Test mode only: GET /api/check?handle=...&contract=...&chain=...
+ * Lets us check results from tools that can only send GET requests.
+ * Off in live mode, where checks are paid and must go through POST.
+ */
+export async function GET(req: NextRequest) {
+  if (!isSandbox()) return NextResponse.json({ error: "Use POST." }, { status: 405 });
+  const q = req.nextUrl.searchParams;
+  const input = parseInput({ handle: q.get("handle") ?? "", contract: q.get("contract") ?? "", chain: q.get("chain") ?? "celo" });
+  if (typeof input === "string") return NextResponse.json({ error: input }, { status: 400 });
+  try {
+    return NextResponse.json(await runCheck(input, { skipCache: q.get("fresh") === "1" }));
+  } catch (e) {
+    if (e instanceof CheckError) return NextResponse.json({ error: e.message }, { status: e.status });
+    console.error(e);
+    return NextResponse.json({ error: "The check failed." }, { status: 502 });
+  }
+}

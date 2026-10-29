@@ -62,6 +62,10 @@ export type Account = {
   ageDays?: number;
   verified?: boolean;
   tier: AccountTier;
+  /** IDs of this account's posts that tag the project, newest first, so each can be opened on X */
+  postIds?: string[];
+  /** Opening words of its first tagging post */
+  snippet?: string;
 };
 
 export type SocialSignals = {
