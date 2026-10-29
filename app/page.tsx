@@ -66,7 +66,8 @@ function WhoIsPosting({ social }: { social: Report["social"] & {} }) {
           return (
             <div key={a.handle} className="acct">
               <a className="acct-main" href={href} target="_blank" rel="noreferrer">
-                <span className="acct-name">@{a.handle}{a.verified && <span className="tick" title="Verified">✓</span>}</span>
+                {/* No tick here: X search marks almost every account as verified, so it tells you nothing */}
+                <span className="acct-name">@{a.handle}</span>
                 <span className="acct-meta">{compact(a.followers)} followers · {age(a.ageDays)} old</span>
                 {a.snippet && <span className="acct-snippet">“{a.snippet}{a.snippet.length >= 140 ? "…" : ""}”</span>}
               </a>
