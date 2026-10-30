@@ -113,7 +113,9 @@ async function register(req: NextRequest) {
   });
 }
 
-async function readBalances(pc: ReturnType<typeof createPublicClient>, owner: `0x${string}`) {
+// Celo chain types differ slightly from the generic client type, so take just the method we need
+type BalanceReader = { readContract: (args: any) => Promise<unknown> };
+async function readBalances(pc: BalanceReader, owner: `0x${string}`) {
   return Promise.all(
     FEE_TOKENS.map(async (t) => ({
       ...t,
