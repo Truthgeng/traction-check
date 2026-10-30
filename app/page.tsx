@@ -30,6 +30,13 @@ function reportWalletError(step: string, err: unknown, wallet: string) {
   } catch { /* ignore */ }
 }
 
+/** Logs a connection stage, so a silent failure shows where it stopped */
+function reportWalletStep(step: string, wallet: string) {
+  try {
+    fetch("/api/client-log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ step, message: "", wallet }) });
+  } catch { /* ignore */ }
+}
+
 /** Rejects if the wallet hasn't answered in time, so the page never just sits there */
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${what} didn't respond`)), ms))]);
@@ -42,6 +49,8 @@ function walletMessage(err: unknown): string {
     return "Connection cancelled in the wallet.";
   if (m.includes("didn't respond")) return "Your wallet didn't respond. Unlock it and try again, or use WalletConnect instead.";
   if (m.includes("already pending")) return "Your wallet already has a request open. Check the wallet app or extension.";
+  if (m.includes("popup didn't open"))
+    return "The WalletConnect window didn't open. If you use an ad or tracker blocker, pause it for this site and try again.";
   if (m.includes("origin") || m.includes("not allowed") || m.includes("project")) return "WalletConnect refused this site. The site's domain may not be allowed yet.";
   return `Couldn't connect: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200);
 }
@@ -176,7 +185,8 @@ export default function Home() {
     setConnecting(true);
     const name = kind === "browser" ? browserWalletName() ?? "browser wallet" : "WalletConnect";
     try {
-      const provider: any = kind === "browser" ? window.ethereum : await connectWalletConnect();
+      reportWalletStep(`connect-${kind}`, name);
+      const provider: any = kind === "browser" ? window.ethereum : await connectWalletConnect((st) => reportWalletStep(st, name));
       const client = createWalletClient({ chain: celo, transport: custom(provider) });
       // WalletConnect waits while the person picks a wallet app, so it gets longer
       const [address] = await withTimeout(client.requestAddresses(), kind === "walletconnect" ? 180_000 : 60_000, name);

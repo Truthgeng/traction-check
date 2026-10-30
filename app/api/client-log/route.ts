@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   try {
     const b = await req.json();
     const clip = (v: unknown, n: number) => String(v ?? "").slice(0, n);
-    console.warn("client wallet error:", JSON.stringify({
+    console.warn(b.message ? "client wallet error:" : "client wallet step:", JSON.stringify({
       step: clip(b.step, 40),
       message: clip(b.message, 400),
       wallet: clip(b.wallet, 60),
