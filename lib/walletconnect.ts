@@ -9,6 +9,17 @@
  */
 const CELO = 42220;
 let cached: any = null;
+let loading: Promise<typeof import("@walletconnect/ethereum-provider")> | null = null;
+
+/** Starts downloading WalletConnect in the background, so Connect is quick when tapped */
+export function preloadWalletConnect() {
+  if (!process.env.NEXT_PUBLIC_WC_PROJECT_ID) return;
+  if (!loading) {
+    loading = import("@walletconnect/ethereum-provider");
+    loading.catch(() => { loading = null; }); // let a later tap try again
+  }
+  return loading;
+}
 
 export function walletConnectAvailable() {
   return !!process.env.NEXT_PUBLIC_WC_PROJECT_ID;
@@ -26,7 +37,7 @@ export async function connectWalletConnect(step: Step = () => {}) {
 
   if (!cached) {
     step("wc-load");
-    const { EthereumProvider } = await withTimeout(import("@walletconnect/ethereum-provider"), 20_000, "Loading WalletConnect");
+    const { EthereumProvider } = await withTimeout(preloadWalletConnect()!, 45_000, "Loading WalletConnect");
     step("wc-init");
     const origin = window.location.origin;
     cached = await withTimeout(
@@ -44,7 +55,7 @@ export async function connectWalletConnect(step: Step = () => {}) {
           icons: [`${origin}/icon.png`],
         },
       }),
-      20_000,
+      30_000,
       "Starting WalletConnect",
     );
   }

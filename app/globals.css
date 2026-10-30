@@ -121,3 +121,4 @@ ul.list.pos li::before { background: var(--good); }
 .sheet-opt span { font-size: 13px; color: var(--muted); }
 .pill-btn { font: 12px var(--mono); border-radius: 999px; padding: 6px 12px; color: var(--muted); }
 @media (min-width: 600px) { .sheet-bg { align-items: center; } }
+.wicon { vertical-align: -4px; margin-right: 8px; border-radius: 4px; }

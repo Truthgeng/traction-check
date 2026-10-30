@@ -6,21 +6,8 @@ import { celo } from "viem/chains";
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
 import { CHAINS, type AccountTier, type Chain, type Report } from "@/lib/types";
-import { connectWalletConnect, disconnectWalletConnect, walletConnectAvailable } from "@/lib/walletconnect";
-
-/** Name of the wallet built into this browser, if any */
-function browserWalletName(): string | null {
-  const e = typeof window !== "undefined" ? window.ethereum : undefined;
-  if (!e) return null;
-  if (e.isMiniPay) return "MiniPay";
-  if (e.isRabby) return "Rabby";
-  if (e.isCoinbaseWallet) return "Coinbase Wallet";
-  if (e.isBraveWallet) return "Brave Wallet";
-  if (e.isTrust || e.isTrustWallet) return "Trust Wallet";
-  if (e.isOkxWallet || e.isOKExWallet) return "OKX Wallet";
-  if (e.isMetaMask) return "MetaMask";
-  return "Browser wallet";
-}
+import { connectWalletConnect, disconnectWalletConnect, preloadWalletConnect, walletConnectAvailable } from "@/lib/walletconnect";
+import { discoverWallets, type InjectedWallet } from "@/lib/wallets";
 
 /** Sends a wallet error to the server logs so it can be diagnosed. Never blocks the page. */
 function reportWalletError(step: string, err: unknown, wallet: string) {
@@ -47,7 +34,12 @@ function walletMessage(err: unknown): string {
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
   if (m.includes("reject") || m.includes("denied") || m.includes("cancel") || m.includes("closed modal") || m.includes("user closed"))
     return "Connection cancelled in the wallet.";
-  if (m.includes("didn't respond")) return "Your wallet didn't respond. Unlock it and try again, or use WalletConnect instead.";
+  if (m.includes("loading walletconnect didn't respond") || m.includes("starting walletconnect didn't respond"))
+    return "WalletConnect is taking too long to load. Check your internet, or pause any ad blocker for this site, then try again.";
+  if (m.includes("didn't respond")) {
+    const who = (err instanceof Error ? err.message : String(err)).replace(/ didn't respond.*/i, "");
+    return `${who} didn't answer. Click the ${who} icon in your browser toolbar, a request may be waiting there. Unlock it, approve, or reject it and try again.`;
+  }
   if (m.includes("already pending")) return "Your wallet already has a request open. Check the wallet app or extension.";
   if (m.includes("popup didn't open"))
     return "The WalletConnect window didn't open. If you use an ad or tracker blocker, pause it for this site and try again.";
@@ -150,12 +142,21 @@ export default function Home() {
   const [connecting, setConnecting] = useState(false);
   const [picker, setPicker] = useState(false);
   const [usingWC, setUsingWC] = useState(false);
+  const [injected, setInjected] = useState<InjectedWallet[]>([]);
+  const [walletName, setWalletName] = useState("");
   const [report, setReport] = useState<Report | null>(null);
 
   useEffect(() => {
     loadConfig();
-    // MiniPay connects on its own
-    if (typeof window !== "undefined" && window.ethereum?.isMiniPay) connectWith("browser");
+    const stop = discoverWallets((list) => {
+      setInjected(list);
+      // MiniPay connects on its own
+      const mini = list.find((w) => w.provider?.isMiniPay);
+      if (mini) connectWith(mini);
+    });
+    // Download WalletConnect in the background so it opens fast when tapped
+    const t = setTimeout(() => preloadWalletConnect(), 1500);
+    return () => { stop(); clearTimeout(t); };
   }, []);
 
   function loadConfig() {
@@ -171,27 +172,28 @@ export default function Home() {
   /** Opens the wallet choice. With only one option available, skips straight to it. */
   function connect() {
     setError("");
-    const hasBrowser = !!browserWalletName();
     const hasWC = walletConnectAvailable();
-    if (hasBrowser && hasWC) return setPicker(true);
-    if (hasBrowser) return connectWith("browser");
+    if (injected.length + (hasWC ? 1 : 0) > 1) return setPicker(true);
+    if (injected.length === 1) return connectWith(injected[0]);
     if (hasWC) return connectWith("walletconnect");
     setError("No wallet found. Open this page in MiniPay or a browser with a Celo wallet.");
   }
 
-  async function connectWith(kind: "browser" | "walletconnect") {
+  async function connectWith(choice: InjectedWallet | "walletconnect") {
     setPicker(false);
     setError("");
     setConnecting(true);
-    const name = kind === "browser" ? browserWalletName() ?? "browser wallet" : "WalletConnect";
+    const kind = choice === "walletconnect" ? "walletconnect" : "browser";
+    const name = choice === "walletconnect" ? "WalletConnect" : choice.name;
     try {
       reportWalletStep(`connect-${kind}`, name);
-      const provider: any = kind === "browser" ? window.ethereum : await connectWalletConnect((st) => reportWalletStep(st, name));
+      const provider: any = choice === "walletconnect" ? await connectWalletConnect((st) => reportWalletStep(st, name)) : choice.provider;
       const client = createWalletClient({ chain: celo, transport: custom(provider) });
       // WalletConnect waits while the person picks a wallet app, so it gets longer
       const [address] = await withTimeout(client.requestAddresses(), kind === "walletconnect" ? 180_000 : 60_000, name);
       try { await client.switchChain({ id: celo.id }); } catch { /* MiniPay and WalletConnect are already on Celo */ }
       setUsingWC(kind === "walletconnect");
+      setWalletName(name);
       setWallet({ client, address });
     } catch (e) {
       reportWalletError("connect", e, name);
@@ -234,7 +236,7 @@ export default function Home() {
       setReport(data);
       loadConfig(); // refresh the free checks left
     } catch (e: any) {
-      if (mustPay) reportWalletError("pay", e, usingWC ? "WalletConnect" : browserWalletName() ?? "");
+      if (mustPay) reportWalletError("pay", e, walletName);
       setError(e?.message?.includes("rejected") ? "Payment was cancelled." : e?.message || "Something went wrong.");
     } finally {
       setBusy(false);
@@ -260,14 +262,16 @@ export default function Home() {
         <div className="sheet-bg" onClick={() => setPicker(false)}>
           <div className="sheet" role="dialog" aria-label="Choose a wallet" onClick={(e) => e.stopPropagation()}>
             <h3>Connect a wallet</h3>
-            <button className="sheet-opt" onClick={() => connectWith("browser")}>
-              <b>{browserWalletName()}</b>
-              <span>The wallet in this browser</span>
-            </button>
-            <button className="sheet-opt" onClick={() => connectWith("walletconnect")}>
+            {injected.map((w) => (
+              <button key={w.id} className="sheet-opt" onClick={() => connectWith(w)}>
+                <b>{w.icon && <img src={w.icon} alt="" width={20} height={20} className="wicon" />}{w.name}</b>
+                <span>Installed in this browser</span>
+              </button>
+            ))}
+            {walletConnectAvailable() && <button className="sheet-opt" onClick={() => connectWith("walletconnect")}>
               <b>WalletConnect</b>
               <span>Any wallet app, or scan a QR code</span>
-            </button>
+            </button>}
             <button className="small" onClick={() => setPicker(false)}>Cancel</button>
           </div>
         </div>
