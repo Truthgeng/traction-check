@@ -6,7 +6,45 @@ import { celo } from "viem/chains";
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
 import { CHAINS, type AccountTier, type Chain, type Report } from "@/lib/types";
-import { connectWalletConnect, walletConnectAvailable } from "@/lib/walletconnect";
+import { connectWalletConnect, disconnectWalletConnect, walletConnectAvailable } from "@/lib/walletconnect";
+
+/** Name of the wallet built into this browser, if any */
+function browserWalletName(): string | null {
+  const e = typeof window !== "undefined" ? window.ethereum : undefined;
+  if (!e) return null;
+  if (e.isMiniPay) return "MiniPay";
+  if (e.isRabby) return "Rabby";
+  if (e.isCoinbaseWallet) return "Coinbase Wallet";
+  if (e.isBraveWallet) return "Brave Wallet";
+  if (e.isTrust || e.isTrustWallet) return "Trust Wallet";
+  if (e.isOkxWallet || e.isOKExWallet) return "OKX Wallet";
+  if (e.isMetaMask) return "MetaMask";
+  return "Browser wallet";
+}
+
+/** Sends a wallet error to the server logs so it can be diagnosed. Never blocks the page. */
+function reportWalletError(step: string, err: unknown, wallet: string) {
+  try {
+    const message = err instanceof Error ? err.message : String(err);
+    fetch("/api/client-log", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ step, message, wallet }) });
+  } catch { /* ignore */ }
+}
+
+/** Rejects if the wallet hasn't answered in time, so the page never just sits there */
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`${what} didn't respond`)), ms))]);
+}
+
+/** Turns wallet errors into something a person can act on */
+function walletMessage(err: unknown): string {
+  const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (m.includes("reject") || m.includes("denied") || m.includes("cancel") || m.includes("closed modal") || m.includes("user closed"))
+    return "Connection cancelled in the wallet.";
+  if (m.includes("didn't respond")) return "Your wallet didn't respond. Unlock it and try again, or use WalletConnect instead.";
+  if (m.includes("already pending")) return "Your wallet already has a request open. Check the wallet app or extension.";
+  if (m.includes("origin") || m.includes("not allowed") || m.includes("project")) return "WalletConnect refused this site. The site's domain may not be allowed yet.";
+  return `Couldn't connect: ${err instanceof Error ? err.message : String(err)}`.slice(0, 200);
+}
 
 type Config = { mode: "demo" | "test" | "live"; mock: boolean; paid: boolean; priceUsd: number; freeChecks: number; freeLeft: number | null };
 
@@ -100,12 +138,15 @@ export default function Home() {
   const [chain, setChain] = useState<Chain>("celo");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [picker, setPicker] = useState(false);
+  const [usingWC, setUsingWC] = useState(false);
   const [report, setReport] = useState<Report | null>(null);
 
   useEffect(() => {
     loadConfig();
     // MiniPay connects on its own
-    if (typeof window !== "undefined" && window.ethereum?.isMiniPay) connect();
+    if (typeof window !== "undefined" && window.ethereum?.isMiniPay) connectWith("browser");
   }, []);
 
   function loadConfig() {
@@ -118,25 +159,42 @@ export default function Home() {
   // Payment is only asked for once the free checks are used up
   const mustPay = !!config?.paid && (config.freeLeft ?? 0) === 0;
 
-  async function connect() {
+  /** Opens the wallet choice. With only one option available, skips straight to it. */
+  function connect() {
     setError("");
+    const hasBrowser = !!browserWalletName();
+    const hasWC = walletConnectAvailable();
+    if (hasBrowser && hasWC) return setPicker(true);
+    if (hasBrowser) return connectWith("browser");
+    if (hasWC) return connectWith("walletconnect");
+    setError("No wallet found. Open this page in MiniPay or a browser with a Celo wallet.");
+  }
+
+  async function connectWith(kind: "browser" | "walletconnect") {
+    setPicker(false);
+    setError("");
+    setConnecting(true);
+    const name = kind === "browser" ? browserWalletName() ?? "browser wallet" : "WalletConnect";
     try {
-      let provider: any = window.ethereum;
-      // No wallet in this browser: open WalletConnect so people can use their wallet app or scan a QR code
-      if (!provider) {
-        if (!walletConnectAvailable()) {
-          setError("No wallet found. Open this page in MiniPay or a browser with a Celo wallet.");
-          return;
-        }
-        provider = await connectWalletConnect();
-      }
+      const provider: any = kind === "browser" ? window.ethereum : await connectWalletConnect();
       const client = createWalletClient({ chain: celo, transport: custom(provider) });
-      const [address] = await client.requestAddresses();
+      // WalletConnect waits while the person picks a wallet app, so it gets longer
+      const [address] = await withTimeout(client.requestAddresses(), kind === "walletconnect" ? 180_000 : 60_000, name);
       try { await client.switchChain({ id: celo.id }); } catch { /* MiniPay and WalletConnect are already on Celo */ }
+      setUsingWC(kind === "walletconnect");
       setWallet({ client, address });
-    } catch {
-      setError("Wallet connection was cancelled.");
+    } catch (e) {
+      reportWalletError("connect", e, name);
+      setError(walletMessage(e));
+    } finally {
+      setConnecting(false);
     }
+  }
+
+  async function disconnect() {
+    if (usingWC) await disconnectWalletConnect();
+    setWallet(null);
+    setUsingWC(false);
   }
 
   async function run() {
@@ -166,6 +224,7 @@ export default function Home() {
       setReport(data);
       loadConfig(); // refresh the free checks left
     } catch (e: any) {
+      if (mustPay) reportWalletError("pay", e, usingWC ? "WalletConnect" : browserWalletName() ?? "");
       setError(e?.message?.includes("rejected") ? "Payment was cancelled." : e?.message || "Something went wrong.");
     } finally {
       setBusy(false);
@@ -175,7 +234,9 @@ export default function Home() {
   const tone = (s: number) => (s >= 65 ? "good" : s >= 40 ? "mid" : "bad");
   const buttonText = busy
     ? "Checking..."
-    : config?.paid && !mustPay
+    : connecting
+      ? "Waiting for your wallet..."
+      : config?.paid && !mustPay
       ? `Run free check (${config.freeLeft} left)`
       : mustPay && !wallet
         ? "Connect wallet to keep checking"
@@ -185,10 +246,32 @@ export default function Home() {
 
   return (
     <main className="wrap">
+      {picker && (
+        <div className="sheet-bg" onClick={() => setPicker(false)}>
+          <div className="sheet" role="dialog" aria-label="Choose a wallet" onClick={(e) => e.stopPropagation()}>
+            <h3>Connect a wallet</h3>
+            <button className="sheet-opt" onClick={() => connectWith("browser")}>
+              <b>{browserWalletName()}</b>
+              <span>The wallet in this browser</span>
+            </button>
+            <button className="sheet-opt" onClick={() => connectWith("walletconnect")}>
+              <b>WalletConnect</b>
+              <span>Any wallet app, or scan a QR code</span>
+            </button>
+            <button className="small" onClick={() => setPicker(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
       <div className="top">
         <div className="brand">traction<span>/</span>check</div>
-        {wallet ? <span className="pill">{wallet.address.slice(0, 6)}…{wallet.address.slice(-4)}</span>
-          : mustPay ? <button className="small" onClick={connect}>Connect</button> : null}
+        {/* Connect is available any time in live mode, free checks or not */}
+        {wallet ? (
+          <button className="small pill-btn" onClick={disconnect} title="Disconnect">
+            {wallet.address.slice(0, 6)}…{wallet.address.slice(-4)} <span aria-hidden>×</span>
+          </button>
+        ) : config?.paid ? (
+          <button className="small" onClick={connect} disabled={connecting}>{connecting ? "Connecting..." : "Connect wallet"}</button>
+        ) : null}
       </div>
 
       <h1>Is the hype real?</h1>
@@ -210,9 +293,9 @@ export default function Home() {
             </select>
           </div>
         </div>
-        <button className="primary" disabled={busy || (!handle && !contract)} onClick={run}>{buttonText}</button>
+        <button className="primary" disabled={busy || connecting || (!handle && !contract && !(mustPay && !wallet))} onClick={run}>{buttonText}</button>
         {config?.paid && !mustPay && (
-          <p className="hint">First {config.freeChecks} checks are free. No wallet needed.</p>
+          <p className="hint">First {config.freeChecks} checks are free. No wallet needed, and connecting one early won't use them up.</p>
         )}
         {mustPay && (
           <p className="hint">${config!.priceUsd.toFixed(2)} per check in USDT or USDC on Celo. You only pay if the check completes.</p>
