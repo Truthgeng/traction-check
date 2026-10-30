@@ -75,7 +75,7 @@ const SQD_DATASET: Record<Chain, string> = {
   ethereum: "ethereum-mainnet",
   arbitrum: "arbitrum-one",
   bsc: "binance-mainnet",
-  hyperevm: "hyperevm-mainnet",
+  hyperevm: "hyperliquid-mainnet",
 };
 
 /** SQD is free and unpaid, so retrying it is safe. Waits out its rate limit (Retry-After). */
