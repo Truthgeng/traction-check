@@ -9,7 +9,7 @@ Built for the Agents on Open Rails Hackathon, Build with buy track.
 1. A user enters an X handle and/or a token contract. The first 2 checks are free with no wallet. After that they pay a small fee per check in USDT or USDC on Celo (x402, settled through Celo's hosted facilitator). They are only charged if the check completes.
 2. The agent pays for services it does not own through [buy](https://usebuy.ai):
    - **X post search** (3 calls: two pages of latest posts and one of top posts, last 7 days)
-   - **Chainstack Celo RPC** (token transfer logs for the last 12h, for Celo tokens)
+   - **Chainstack Celo RPC** (token transfer logs for the last 24h, for Celo tokens)
    - **Cencori LLM inference** (writes the plain-language verdict)
    - SQD multi-chain data for Base, Ethereum, Arbitrum and BNB Chain (free route on the buy gateway)
 3. A fixed rule-based score is built from the numbers (including the quality of the accounts posting), then the LLM can move it by 10 points at most and writes the summary. Every check reads the same fixed window, and results are cached for 15 minutes, so the same project gets the same result.

@@ -2,7 +2,7 @@ import { paidPost, GATEWAY } from "./buy";
 import type { Chain, ChainSignals, PaidCall } from "@/lib/types";
 
 const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-const WINDOW_HOURS = 12;
+const WINDOW_HOURS = 24;
 // Every check reads the same fixed window ending at the newest block, so two checks
 // minutes apart look at almost exactly the same activity.
 
@@ -144,17 +144,17 @@ async function sqdTransfers(chain: Chain, contract: string): Promise<Read> {
   const head = await headRes.json();
   const toBlock = Number(head.number ?? head.block_number ?? head.height);
 
-  // The same fixed window every check: the last 12 hours, cut into 6 slices of 2 hours
+  // The same fixed window every check: the last 24 hours, cut into 8 slices of 3 hours
   // that are read side by side (4 at a time, inside SQD's free rate limit).
   // If a slice can't be read, we keep only the unbroken run of slices from the newest
   // one back, so the hours we report are exactly the hours we read.
-  const SLICES = 6;
+  const SLICES = 8;
   const slice = Math.max(1, Math.ceil((toBlock - fromBlock + 1) / SLICES));
   const ranges = Array.from({ length: SLICES }, (_, i) => {
     const to = toBlock - i * slice;
     return { from: Math.max(fromBlock, to - slice + 1), to };
   }).filter((x) => x.to >= x.from);
-  const deadline = Date.now() + 25_000; // stay well inside the 60s function limit
+  const deadline = Date.now() + 40_000; // stay well inside the 120s function limit
 
   const results: { transfers: Transfer[]; complete: boolean }[] = new Array(ranges.length);
   let next = 0;
