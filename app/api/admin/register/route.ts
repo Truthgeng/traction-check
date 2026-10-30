@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, createWalletClient, http, parseEventLogs, erc20Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
-import { withAttribution } from "@celo/attribution-tags";
+import { withAttribution, verifyTx } from "@celo/attribution-tags";
 import { timingSafeEqual } from "node:crypto";
 import { normaliseKey } from "@/lib/key";
 
@@ -44,6 +44,15 @@ const fail = (error: string, status = 400) => NextResponse.json({ error }, { sta
 export async function GET(req: NextRequest) {
   if (!authorised(req)) return fail("Not allowed", 401);
   if (req.nextUrl.searchParams.get("run") === "1") return register(req);
+  // ?verify=<tx hash>: decode the attribution tag a transaction carries
+  const verify = req.nextUrl.searchParams.get("verify");
+  if (verify) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(verify)) return fail("Not a transaction hash");
+    const client = createPublicClient({ chain: celo, transport: http() });
+    const tag = await verifyTx({ client: client as any, hash: verify as `0x${string}` });
+    const expected = process.env.ATTRIBUTION_CODE;
+    return NextResponse.json({ tx: verify, tag, expected, matches: !!tag && !!expected && tag.codes.includes(expected) });
+  }
   let key: `0x${string}` | undefined;
   try { key = normaliseKey(process.env.AGENT_PRIVATE_KEY); } catch (e) { return fail(String((e as Error).message)); }
   if (!key) return fail("AGENT_PRIVATE_KEY is not set");
