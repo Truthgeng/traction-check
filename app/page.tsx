@@ -197,6 +197,7 @@ export default function Home() {
       setWallet({ client, address });
     } catch (e) {
       reportWalletError("connect", e, name);
+      if (kind === "walletconnect") await disconnectWalletConnect(); // next tap starts fresh
       setError(walletMessage(e));
     } finally {
       setConnecting(false);

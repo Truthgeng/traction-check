@@ -59,7 +59,9 @@ export async function connectWalletConnect(step: Step = () => {}) {
       "Starting WalletConnect",
     );
   }
-  if (cached.connected) return cached;
+  // Only reuse a provider that has a live session. A half-finished attempt
+  // (closed popup, reset request) leaves one that answers "call connect() first".
+  if (cached.session) return cached;
 
   step("wc-open");
   // The popup is ready once WalletConnect hands it a pairing link. If that never
@@ -79,15 +81,24 @@ export async function connectWalletConnect(step: Step = () => {}) {
     ]);
     // Popup showed: now wait (longer) for the person to approve in their wallet app
     await withTimeout(connecting, 180_000, "Wallet");
+  } catch (e) {
+    // Start clean next time instead of reusing a broken attempt
+    const old = cached;
+    cached = null;
+    try { await old?.disconnect?.(); } catch { /* ignore */ }
+    throw e;
   } finally {
-    cached.removeListener?.("display_uri", onUri);
+    const p = cached;
+    p?.removeListener?.("display_uri", onUri);
   }
   step("wc-connected");
   return cached;
 }
 
 export async function disconnectWalletConnect() {
-  if (cached?.connected) await cached.disconnect().catch(() => {});
+  const old = cached;
+  cached = null;
+  if (old) await old.disconnect?.().catch(() => {});
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
