@@ -6,6 +6,7 @@ import { celo } from "viem/chains";
 import { wrapFetchWithPaymentFromConfig } from "@x402/fetch";
 import { ExactEvmScheme } from "@x402/evm";
 import { CHAINS, type AccountTier, type Chain, type Report } from "@/lib/types";
+import { connectWalletConnect, walletConnectAvailable } from "@/lib/walletconnect";
 
 type Config = { mode: "demo" | "test" | "live"; mock: boolean; paid: boolean; priceUsd: number; freeChecks: number; freeLeft: number | null };
 
@@ -119,14 +120,19 @@ export default function Home() {
 
   async function connect() {
     setError("");
-    if (!window.ethereum) {
-      setError("No wallet found. Open this page in MiniPay or a browser with a Celo wallet.");
-      return;
-    }
     try {
-      const client = createWalletClient({ chain: celo, transport: custom(window.ethereum) });
+      let provider: any = window.ethereum;
+      // No wallet in this browser: open WalletConnect so people can use their wallet app or scan a QR code
+      if (!provider) {
+        if (!walletConnectAvailable()) {
+          setError("No wallet found. Open this page in MiniPay or a browser with a Celo wallet.");
+          return;
+        }
+        provider = await connectWalletConnect();
+      }
+      const client = createWalletClient({ chain: celo, transport: custom(provider) });
       const [address] = await client.requestAddresses();
-      try { await client.switchChain({ id: celo.id }); } catch { /* MiniPay is already on Celo */ }
+      try { await client.switchChain({ id: celo.id }); } catch { /* MiniPay and WalletConnect are already on Celo */ }
       setWallet({ client, address });
     } catch {
       setError("Wallet connection was cancelled.");
