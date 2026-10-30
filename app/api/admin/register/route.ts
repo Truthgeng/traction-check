@@ -6,6 +6,8 @@ import { withAttribution, verifyTx } from "@celo/attribution-tags";
 import { timingSafeEqual } from "node:crypto";
 import { normaliseKey } from "@/lib/key";
 import { runCheck } from "@/lib/agent/run";
+import { sqdHead } from "@/lib/agent/onchain";
+import type { Chain } from "@/lib/types";
 
 /**
  * One-time ERC-8004 registration, run on the server so the agent key never leaves Vercel.
@@ -45,6 +47,9 @@ const fail = (error: string, status = 400) => NextResponse.json({ error }, { sta
 export async function GET(req: NextRequest) {
   if (!authorised(req)) return fail("Not allowed", 401);
   if (req.nextUrl.searchParams.get("run") === "1") return register(req);
+  // ?sqd=<chain>: confirms the free SQD route serves this chain
+  const sqd = req.nextUrl.searchParams.get("sqd");
+  if (sqd) return NextResponse.json(await sqdHead(sqd as Chain).catch((e) => ({ error: String(e) })));
   // ?check=<handle>: run one real check as the operator (no user payment), to test live mode end to end
   const check = req.nextUrl.searchParams.get("check");
   if (check) {

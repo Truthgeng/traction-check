@@ -1,4 +1,4 @@
-export type Chain = "celo" | "base" | "ethereum" | "arbitrum" | "bsc";
+export type Chain = "celo" | "base" | "ethereum" | "arbitrum" | "bsc" | "hyperevm";
 
 export const CHAINS: { id: Chain; label: string }[] = [
   { id: "celo", label: "Celo" },
@@ -6,6 +6,7 @@ export const CHAINS: { id: Chain; label: string }[] = [
   { id: "ethereum", label: "Ethereum" },
   { id: "arbitrum", label: "Arbitrum" },
   { id: "bsc", label: "BNB Chain" },
+  { id: "hyperevm", label: "Hyperliquid" },
 ];
 
 export type CheckInput = {

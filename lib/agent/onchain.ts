@@ -75,6 +75,7 @@ const SQD_DATASET: Record<Chain, string> = {
   ethereum: "ethereum-mainnet",
   arbitrum: "arbitrum-one",
   bsc: "binance-mainnet",
+  hyperevm: "hyperevm-mainnet",
 };
 
 /** SQD is free and unpaid, so retrying it is safe. Waits out its rate limit (Retry-After). */
@@ -124,6 +125,12 @@ async function sqdRange(ds: string, contract: string, fromBlock: number, toBlock
     cursor = last + 1;
   }
   return { transfers: out, complete: true };
+}
+
+/** Admin check: is this chain readable through the buy gateway's SQD route? */
+export async function sqdHead(chain: Chain) {
+  const res = await sqdFetch(`${GATEWAY}/sqd/datasets/${SQD_DATASET[chain]}/head`);
+  return { status: res.status, body: (await res.text()).slice(0, 200) };
 }
 
 async function sqdTransfers(chain: Chain, contract: string): Promise<Read> {
