@@ -5,6 +5,7 @@ import { celo } from "viem/chains";
 import { withAttribution, verifyTx } from "@celo/attribution-tags";
 import { timingSafeEqual } from "node:crypto";
 import { normaliseKey } from "@/lib/key";
+import { runCheck } from "@/lib/agent/run";
 
 /**
  * One-time ERC-8004 registration, run on the server so the agent key never leaves Vercel.
@@ -44,6 +45,22 @@ const fail = (error: string, status = 400) => NextResponse.json({ error }, { sta
 export async function GET(req: NextRequest) {
   if (!authorised(req)) return fail("Not allowed", 401);
   if (req.nextUrl.searchParams.get("run") === "1") return register(req);
+  // ?check=<handle>: run one real check as the operator (no user payment), to test live mode end to end
+  const check = req.nextUrl.searchParams.get("check");
+  if (check) {
+    try {
+      const report = await runCheck({ handle: check.replace(/^@/, ""), chain: "celo" }, { skipCache: true });
+      return NextResponse.json({
+        mode: report.mode,
+        profile: report.profile?.handle ?? null,
+        postsTagging: report.postsTagging,
+        verdict: { score: report.verdict.score, label: report.verdict.label, summary: report.verdict.summary },
+        paidCalls: report.paidCalls,
+      });
+    } catch (e) {
+      return fail(`Check failed: ${(e as Error).message}`, 502);
+    }
+  }
   // ?verify=<tx hash>: decode the attribution tag a transaction carries
   const verify = req.nextUrl.searchParams.get("verify");
   if (verify) {
