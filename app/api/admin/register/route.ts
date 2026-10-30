@@ -14,8 +14,11 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const REGISTRY = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"; // ERC-8004 Identity Registry, Celo mainnet
-const USDC = "0xcebA9300f2b948710d2653dD7B07f33A8B32118C";
-const USDC_FEE_ADAPTER = "0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B"; // pay gas in USDC
+// Stablecoins the fee can be paid in (Celo fee abstraction). Source: docs.celo.org/tooling/contracts/fee-currencies
+const FEE_TOKENS = [
+  { symbol: "USDT", token: "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e", adapter: "0x0E2A3e05bc9A16F5292A6170456A710cb89C6f72" },
+  { symbol: "USDC", token: "0xcebA9300f2b948710d2653dD7B07f33A8B32118C", adapter: "0x2F25deB3848C207fc8E0c34035B3Ba7fC157602B" },
+] as const;
 
 const abi = [
   { type: "function", name: "register", stateMutability: "nonpayable", inputs: [{ name: "agentURI", type: "string" }], outputs: [{ name: "agentId", type: "uint256" }] },
@@ -46,14 +49,14 @@ export async function GET(req: NextRequest) {
   if (!key) return fail("AGENT_PRIVATE_KEY is not set");
   const account = privateKeyToAccount(key);
   const pc = createPublicClient({ chain: celo, transport: http() });
-  const [usdc, owned] = await Promise.all([
-    pc.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address] }),
+  const [balances, owned] = await Promise.all([
+    readBalances(pc, account.address),
     pc.readContract({ address: REGISTRY, abi, functionName: "balanceOf", args: [account.address] }),
   ]);
   const site = (process.env.SITE_URL || req.nextUrl.origin).replace(/\/$/, "");
   return NextResponse.json({
     agentWallet: account.address,
-    usdc: Number(usdc) / 1e6,
+    balances: Object.fromEntries(balances.map((b) => [b.symbol, Number(b.amount) / 1e6])),
     alreadyOwnsIdentities: Number(owned),
     agentURI: `${site}/agent.json`,
     attributionCode: process.env.ATTRIBUTION_CODE || null,
@@ -82,8 +85,10 @@ async function register(req: NextRequest) {
   const owned = await pc.readContract({ address: REGISTRY, abi, functionName: "balanceOf", args: [account.address] });
   if (owned > 0n) return fail("This wallet already owns an ERC-8004 identity. Look it up on 8004scan.io before doing anything else.", 409);
 
-  const usdc = await pc.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address] });
-  if (usdc < 20_000n) return fail(`The agent wallet ${account.address} needs some USDC on Celo to pay the fee (has ${Number(usdc) / 1e6}).`);
+  // Pay the fee in whichever stablecoin the wallet actually holds
+  const balances = await readBalances(pc, account.address);
+  const fee = balances.find((b) => b.amount >= 20_000n);
+  if (!fee) return fail(`The agent wallet ${account.address} needs some USDT or USDC on Celo to pay the fee.`);
 
   const site = (process.env.SITE_URL || req.nextUrl.origin).replace(/\/$/, "");
   const agentURI = `${site}/agent.json`;
@@ -92,7 +97,7 @@ async function register(req: NextRequest) {
 
   const wallet = createWalletClient({ account, chain: celo, transport: http() }).extend(withAttribution(code));
   const { request } = await pc.simulateContract({ account, address: REGISTRY, abi, functionName: "register", args: [agentURI] });
-  const hash = await wallet.writeContract({ ...request, feeCurrency: USDC_FEE_ADAPTER } as any);
+  const hash = await wallet.writeContract({ ...request, feeCurrency: fee.adapter } as any);
   const receipt = await pc.waitForTransactionReceipt({ hash, timeout: 90_000 });
   const [event] = parseEventLogs({ abi, eventName: "Registered", logs: receipt.logs });
 
@@ -103,6 +108,16 @@ async function register(req: NextRequest) {
     agentId: event ? event.args.agentId.toString() : null,
     agentWallet: account.address,
     agentURI,
+    feePaidIn: fee.symbol,
     next: event ? "Set AGENT_ID in Vercel to this agentId and redeploy." : "No Registered event found. Check the tx on celoscan before trying again.",
   });
+}
+
+async function readBalances(pc: ReturnType<typeof createPublicClient>, owner: `0x${string}`) {
+  return Promise.all(
+    FEE_TOKENS.map(async (t) => ({
+      ...t,
+      amount: (await pc.readContract({ address: t.token, abi: erc20Abi, functionName: "balanceOf", args: [owner] })) as bigint,
+    })),
+  );
 }
