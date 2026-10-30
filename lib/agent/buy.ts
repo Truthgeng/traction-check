@@ -2,6 +2,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { x402, getTokenBalance } from "@celo/buy-core";
 import type { PaidCall } from "@/lib/types";
 import { isSandbox } from "./mode";
+import { normaliseKey } from "@/lib/key";
 
 export const GATEWAY = "https://gateway.usebuy.ai";
 
@@ -15,9 +16,9 @@ let cached: { key: string; account: ReturnType<typeof privateKeyToAccount> } | n
 function agentAccount() {
   // Test mode uses its own key so a test wallet is never mixed up with the real one
   const name = isSandbox() ? "SANDBOX_PRIVATE_KEY" : "AGENT_PRIVATE_KEY";
-  const key = process.env[name];
+  const key = normaliseKey(process.env[name]);
   if (!key) throw new Error(`${name} is not set`);
-  if (cached?.key !== key) cached = { key, account: privateKeyToAccount(key as `0x${string}`) };
+  if (cached?.key !== key) cached = { key, account: privateKeyToAccount(key) };
   return cached.account;
 }
 

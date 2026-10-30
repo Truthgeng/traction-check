@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { celo } from "viem/chains";
 import { withAttribution } from "@celo/attribution-tags";
 import { timingSafeEqual } from "node:crypto";
+import { normaliseKey } from "@/lib/key";
 
 /**
  * One-time ERC-8004 registration, run on the server so the agent key never leaves Vercel.
@@ -28,19 +29,22 @@ const abi = [
 
 function authorised(req: NextRequest) {
   const want = process.env.ADMIN_SECRET;
-  const got = req.headers.get("x-admin-secret");
+  // header preferred; ?key= also accepted so it can be triggered from a plain link
+  const got = req.headers.get("x-admin-secret") ?? req.nextUrl.searchParams.get("key");
   if (!want || !got || want.length !== got.length) return false;
   return timingSafeEqual(Buffer.from(want), Buffer.from(got));
 }
 
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status });
 
-/** GET: shows what registration would use, without sending anything */
+/** GET: shows what registration would use, without sending anything. With ?run=1 it registers. */
 export async function GET(req: NextRequest) {
   if (!authorised(req)) return fail("Not allowed", 401);
-  const key = process.env.AGENT_PRIVATE_KEY;
+  if (req.nextUrl.searchParams.get("run") === "1") return register(req);
+  let key: `0x${string}` | undefined;
+  try { key = normaliseKey(process.env.AGENT_PRIVATE_KEY); } catch (e) { return fail(String((e as Error).message)); }
   if (!key) return fail("AGENT_PRIVATE_KEY is not set");
-  const account = privateKeyToAccount(key as `0x${string}`);
+  const account = privateKeyToAccount(key);
   const pc = createPublicClient({ chain: celo, transport: http() });
   const [usdc, owned] = await Promise.all([
     pc.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [account.address] }),
@@ -60,13 +64,18 @@ export async function GET(req: NextRequest) {
 /** POST: registers. Exactly one attempt, never retried automatically. */
 export async function POST(req: NextRequest) {
   if (!authorised(req)) return fail("Not allowed", 401);
+  return register(req);
+}
+
+async function register(req: NextRequest) {
   if (process.env.AGENT_ID) return fail(`Already registered as agent ${process.env.AGENT_ID}`, 409);
-  const key = process.env.AGENT_PRIVATE_KEY;
+  let key: `0x${string}` | undefined;
+  try { key = normaliseKey(process.env.AGENT_PRIVATE_KEY); } catch (e) { return fail(String((e as Error).message)); }
   const code = process.env.ATTRIBUTION_CODE;
   if (!key) return fail("AGENT_PRIVATE_KEY is not set");
   if (!code) return fail("ATTRIBUTION_CODE is not set (it comes from your Loops House enrollment)");
 
-  const account = privateKeyToAccount(key as `0x${string}`);
+  const account = privateKeyToAccount(key);
   const pc = createPublicClient({ chain: celo, transport: http() });
 
   // Never register twice: the registry is an NFT, so an existing identity shows up as a balance

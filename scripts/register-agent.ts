@@ -36,7 +36,8 @@ function need(name: string) {
   return v;
 }
 
-const key = need("AGENT_PRIVATE_KEY") as `0x${string}`;
+const rawKey = need("AGENT_PRIVATE_KEY").replace(/^0x/i, "");
+const key = `0x${rawKey}` as `0x${string}`;
 const site = need("SITE_URL").replace(/\/$/, "");
 const code = need("ATTRIBUTION_CODE");
 if (env.AGENT_ID) { console.log(`Already registered as agent ${env.AGENT_ID}.`); process.exit(0); }
