@@ -226,19 +226,31 @@ export default function Home() {
         };
         doFetch = wrapFetchWithPaymentFromConfig(fetch, { schemes: [{ network: "eip155:42220", client: new ExactEvmScheme(signer as any) }] });
       }
+      // A check takes 30 to 90 seconds. If the phone drops the connection (screen locked,
+      // app switched) the request can hang forever, so give up after the server's own limit.
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 135_000);
       const res = await doFetch("/api/check", {
+        signal: ctrl.signal,
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ handle, contract, chain }),
       });
-      const data = await res.json();
+      const data = await res.json().finally(() => clearTimeout(timer));
       if (data.needsPayment && config) setConfig({ ...config, freeLeft: 0 });
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
       setReport(data);
       loadConfig(); // refresh the free checks left
     } catch (e: any) {
       if (mustPay) reportWalletError("pay", e, walletName);
-      setError(e?.message?.includes("rejected") ? "Payment was cancelled." : e?.message || "Something went wrong.");
+      const aborted = e?.name === "AbortError" || /abort/i.test(e?.message ?? "");
+      setError(
+        aborted
+          ? mustPay
+            ? "The check lost its connection, often because the screen locked or you switched apps. Look at your wallet history before running it again: you're only charged if the check finished."
+            : "The check lost its connection, often because the screen locked or you switched apps. No free check was used. Keep this tab open and run it again."
+          : e?.message?.includes("rejected") ? "Payment was cancelled." : e?.message || "Something went wrong.",
+      );
     } finally {
       setBusy(false);
     }
@@ -316,10 +328,11 @@ export default function Home() {
           </div>
         </div>
         <button className="primary" disabled={busy || connecting || (!handle && !contract && !(mustPay && !wallet))} onClick={run}>{buttonText}</button>
-        {config?.paid && !mustPay && (
+        {busy && <p className="hint">Reading X and the chain. This usually takes 30 to 90 seconds, so keep this tab open.</p>}
+        {!busy && config?.paid && !mustPay && (
           <p className="hint">First {config.freeChecks} checks are free. No wallet needed, and connecting one early won't use them up.</p>
         )}
-        {mustPay && (
+        {!busy && mustPay && (
           <p className="hint">${config!.priceUsd.toFixed(2)} per check in USDT or USDC on Celo. You only pay if the check completes.</p>
         )}
         {error && <p className="error">{error}</p>}
