@@ -9,7 +9,7 @@ import { COOKIE, freeLeft, nextCookie, takeDailySlot } from "@/lib/free";
 
 export const runtime = "nodejs";
 // Checks usually take 30 to 45s (several paid calls plus chain reads). 120s gives headroom.
-export const maxDuration = 120;
+export const maxDuration = 300; // checks pay several services in turn and can take over 2 minutes
 
 function parseInput(body: any): CheckInput | string {
   // Accept "@name", "name", or a pasted profile link like https://x.com/name/status/123

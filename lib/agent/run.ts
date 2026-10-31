@@ -19,6 +19,9 @@ export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } 
   const cached = opts.skipCache ? null : getCached(input);
   if (cached) return cached;
   const sandbox = isSandbox();
+  const t0 = Date.now();
+  const took: Record<string, number> = {};
+  const lap = <T,>(name: string, p: Promise<T>) => p.finally(() => { took[name] = Date.now() - t0; });
 
   const receipts: PaidCall[] = [];
   const errors: string[] = [];
@@ -33,15 +36,15 @@ export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } 
   // The profile lookup, the X searches and the onchain read all run side by side
   const [profile, social, chain] = await Promise.all([
     handle
-      ? fetchProfile(handle, receipts).catch((e) => { console.error("profile lookup failed", e); return undefined; })
+      ? lap("profile", fetchProfile(handle, receipts)).catch((e) => { console.error("profile lookup failed", e); return undefined; })
       : Promise.resolve(undefined as Profile | null | undefined),
     (async () => {
       // Posts that tag the project, not posts by the project itself
       const q = handle ? `@${handle} -from:${handle} within_time:7d` : `${input.contract} within_time:7d`;
       // 2 pages of latest + 1 page of top: a bigger sample keeps results steady between checks
       const [latest, top] = await Promise.all([
-        searchXPages(q, "latest", 2, receipts),
-        searchXPages(q, "top", 1, receipts),
+        lap("xLatest", searchXPages(q, "latest", 2, receipts)),
+        lap("xTop", searchXPages(q, "top", 1, receipts)),
       ]);
       const found = [...new Map([...latest, ...top].map((p) => [p.id ?? p.text, p])).values()];
       postsFound = found.length;
@@ -54,7 +57,7 @@ export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } 
       return socialSignals(tagging);
     })().catch((e) => { console.error("x search failed", e); errors.push("x"); return null; }),
     input.contract
-      ? chainSignals(input.chain, input.contract, receipts, { paidCelo: !sandbox })
+      ? lap("chain", chainSignals(input.chain, input.contract, receipts, { paidCelo: !sandbox }))
           .catch((e) => { console.error("chain read failed", e); errors.push("chain"); return null; })
       : Promise.resolve(null),
   ]);
@@ -75,7 +78,9 @@ export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } 
     ? ruleVerdict(null, null)
     : sandbox
       ? ruleVerdict(social, chain)
-      : await writeVerdict(subject, social, chain, receipts);
+      : await lap("verdict", writeVerdict(subject, social, chain, receipts));
+  // One line per check, so slow checks can be traced to the step that held them up
+  console.log("check timing", JSON.stringify({ subject, ms: Date.now() - t0, steps: took, errors }));
 
   const report: Report = {
     input,

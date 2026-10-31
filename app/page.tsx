@@ -229,13 +229,17 @@ export default function Home() {
       // A check takes 30 to 90 seconds. If the phone drops the connection (screen locked,
       // app switched) the request can hang forever, so give up after the server's own limit.
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 135_000);
-      const res = await doFetch("/api/check", {
-        signal: ctrl.signal,
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ handle, contract, chain }),
-      });
+      const timer = setTimeout(() => ctrl.abort(), 240_000);
+      // The race also covers a wallet that never answers the payment request
+      const res = await Promise.race([
+        doFetch("/api/check", {
+          signal: ctrl.signal,
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ handle, contract, chain }),
+        }),
+        new Promise<never>((_, rej) => ctrl.signal.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))),
+      ]);
       const data = await res.json().finally(() => clearTimeout(timer));
       if (data.needsPayment && config) setConfig({ ...config, freeLeft: 0 });
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
@@ -328,7 +332,7 @@ export default function Home() {
           </div>
         </div>
         <button className="primary" disabled={busy || connecting || (!handle && !contract && !(mustPay && !wallet))} onClick={run}>{buttonText}</button>
-        {busy && <p className="hint">Reading X and the chain. This usually takes 30 to 90 seconds, so keep this tab open.</p>}
+        {busy && <p className="hint">Reading X and the chain. This usually takes 1 to 2 minutes, so keep this tab open and the screen on.</p>}
         {!busy && config?.paid && !mustPay && (
           <p className="hint">First {config.freeChecks} checks are free. No wallet needed, and connecting one early won't use them up.</p>
         )}
