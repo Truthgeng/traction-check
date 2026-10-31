@@ -259,6 +259,13 @@ export default function Home() {
 
   return (
     <main className="wrap">
+      <svg width="0" height="0" aria-hidden style={{ position: "absolute" }}>
+        <filter id="ink">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n" />
+          <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -0.7 1.08" result="holes" />
+          <feComposite in="SourceGraphic" in2="holes" operator="in" />
+        </filter>
+      </svg>
       {picker && (
         <div className="sheet-bg" onClick={() => setPicker(false)}>
           <div className="sheet" role="dialog" aria-label="Choose a wallet" onClick={(e) => e.stopPropagation()}>
@@ -278,7 +285,7 @@ export default function Home() {
         </div>
       )}
       <div className="top">
-        <div className="brand">traction<span>/</span>check</div>
+        <a className="brand" href="/"><img src="/logo.svg" alt="" width={34} height={34} />traction check</a>
         {/* Connect is available any time in live mode, free checks or not */}
         {wallet ? (
           <button className="small pill-btn" onClick={disconnect} title="Disconnect">
@@ -296,7 +303,7 @@ export default function Home() {
         {config?.mode === "demo" && <div className="banner">Demo mode. Results use sample data, nothing is charged.</div>}
         {config?.mode === "test" && <div className="banner">Test mode. Real X data, paid with test funds. Free for you.</div>}
         <div className="field">
-          <label htmlFor="h">Project's X handle</label>
+          <label htmlFor="h">X handle of the project</label>
           <input id="h" placeholder="@celo or x.com/celo" value={handle} onChange={(e) => setHandle(e.target.value)} autoComplete="off" />
         </div>
         <div className="field">
@@ -339,10 +346,8 @@ export default function Home() {
           )}
           <div className="card verdict">
             <div className={`score ${tone(report.verdict.score)}`}>{report.verdict.score}<small>/100</small></div>
-            <div>
-              <p className={`label ${tone(report.verdict.score)}`}>{report.verdict.label}</p>
-              <p className="summary">{report.verdict.summary}</p>
-            </div>
+            <p key={report.generatedAt} className={`stamp label ${tone(report.verdict.score)}`}>{report.verdict.label}</p>
+            <p className="summary">{report.verdict.summary}</p>
           </div>
 
           {report.cachedAt && (
