@@ -17,7 +17,7 @@ const topicToAddr = (t: string) => ("0x" + t.slice(-40)).toLowerCase();
 // ---------------------------------------------------------------------------
 
 const CELO_BLOCK_SECONDS = 1; // Celo L2 targets 1s blocks; checked against real timestamps below
-const LOG_CHUNK = 5_000;
+const LOG_CHUNK = 2_000; // smaller pieces: busy tokens fail on big ones
 
 type RpcReply = { id: number; result?: any; error?: { message: string } };
 
