@@ -45,30 +45,37 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Re
   // One paid batch: every Transfer log across the window, in chunks, NEWEST chunk first
   const chunks: { from: number; to: number }[] = [];
   for (let to = latest; to >= start; to -= LOG_CHUNK) chunks.push({ from: Math.max(start, to - LOG_CHUNK + 1), to });
-  const replies = await rpcBatch(
-    chunks.map((c) => ({
-      method: "eth_getLogs",
-      params: [{ address: contract, topics: [TRANSFER_TOPIC], fromBlock: hex(c.from), toBlock: hex(c.to) }],
-    })),
-    receipts,
-  );
+  const getLogs = (c: { from: number; to: number }) => ({
+    method: "eth_getLogs",
+    params: [{ address: contract, topics: [TRANSFER_TOPIC], fromBlock: hex(c.from), toBlock: hex(c.to) }],
+  });
+  const replies = await rpcBatch(chunks.map(getLogs), receipts);
 
   const transfers: Transfer[] = [];
-  let reachedBlock = latest;
-  for (let i = 0; i < chunks.length; i++) {
-    const r = replies[i];
-    if (!r?.result) {
-      // a failed chunk ends the read here, so the covered window stays honest
-      const failed = replies.slice(i).filter((x) => !x?.result).length;
-      console.warn("chainstack chunk failed", JSON.stringify({ at: i, of: chunks.length, failed, error: r?.error ?? (r ? "no result" : "missing reply") }).slice(0, 600));
-      break;
-    }
-    for (const log of r.result as { topics: string[] }[]) {
+  let blocksRead = 0;
+  const take = (r: RpcReply | undefined, c: { from: number; to: number }) => {
+    if (!Array.isArray(r?.result)) return false;
+    for (const log of r!.result as { topics: string[] }[]) {
       if (log.topics?.length >= 3) transfers.push({ from: topicToAddr(log.topics[1]), to: topicToAddr(log.topics[2]) });
     }
-    reachedBlock = chunks[i].from;
+    blocksRead += c.to - c.from + 1;
+    return true;
+  };
+
+  // Busy tokens sometimes get "internal error" on a chunk. Retry those once, split in
+  // half, in one more paid batch, instead of cutting the window short.
+  const failed = chunks.filter((c, i) => !take(replies[i], c));
+  if (failed.length) {
+    const halves = failed.flatMap((c) => {
+      const mid = Math.floor((c.from + c.to) / 2);
+      return [{ from: mid + 1, to: c.to }, { from: c.from, to: mid }];
+    });
+    const retry = await rpcBatch(halves.map(getLogs), receipts).catch(() => [] as (RpcReply | undefined)[]);
+    const stillFailed = halves.filter((c, i) => !take(retry[i], c)).length;
+    console.warn("chainstack retry", JSON.stringify({ chunks: chunks.length, failed: failed.length, stillFailed, error: replies.find((r) => r?.error)?.error }).slice(0, 400));
   }
-  return { transfers, coveredHours: ((latest - reachedBlock) * CELO_BLOCK_SECONDS) / 3600 };
+  // Hours actually read (if a piece still failed, the report says fewer hours, never more)
+  return { transfers, coveredHours: (blocksRead * CELO_BLOCK_SECONDS) / 3600 };
 }
 
 const hex = (n: number) => "0x" + n.toString(16);
