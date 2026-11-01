@@ -103,6 +103,7 @@ function settleAfterResponse(routeHandler: typeof handler, route: RouteConfig, s
       paymentHeader: adapter.getHeader("payment-signature") || adapter.getHeader("x-payment"),
     };
     const result: any = await http.processHTTPRequest(context as any);
+    console.log("payment step", JSON.stringify({ result: result.type }));
     if (result.type === "payment-error") {
       const r = result.response;
       const headers = new Headers(r.headers);
@@ -146,6 +147,7 @@ const paymentOn = paid !== handler;
 export async function POST(req: NextRequest) {
   const hasPayment = req.headers.has("x-payment") || req.headers.has("payment-signature");
   const cookie = req.cookies.get(COOKIE)?.value;
+  console.log("check request", JSON.stringify({ withPayment: hasPayment, freeLeft: freeLeft(cookie) }));
 
   if (!paymentOn || hasPayment || freeLeft(cookie) === 0) {
     try {

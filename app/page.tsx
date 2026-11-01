@@ -222,8 +222,12 @@ export default function Home() {
         // The user signs a USDT/USDC authorization for this one check. Nothing moves unless the check succeeds.
         const signer = {
           address: wallet.address,
-          signTypedData: (m: any) =>
-            wallet.client.signTypedData({ account: wallet.address, domain: m.domain, types: m.types, primaryType: m.primaryType, message: m.message }),
+          signTypedData: async (m: any) => {
+            reportWalletStep("pay-sign-asked", walletName);
+            const sig = await wallet.client.signTypedData({ account: wallet.address, domain: m.domain, types: m.types, primaryType: m.primaryType, message: m.message });
+            reportWalletStep("pay-signed", walletName);
+            return sig;
+          },
         };
         doFetch = wrapFetchWithPaymentFromConfig(fetch, { schemes: [{ network: "eip155:42220", client: new ExactEvmScheme(signer as any) }] });
       }
