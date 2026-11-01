@@ -7,6 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 import { normaliseKey } from "@/lib/key";
 import { runCheck } from "@/lib/agent/run";
 import { sqdHead } from "@/lib/agent/onchain";
+import { searchX } from "@/lib/agent/social";
 import type { Chain } from "@/lib/types";
 
 /**
@@ -47,6 +48,14 @@ const fail = (error: string, status = 400) => NextResponse.json({ error }, { sta
 export async function GET(req: NextRequest) {
   if (!authorised(req)) return fail("Not allowed", 401);
   if (req.nextUrl.searchParams.get("run") === "1") return register(req);
+  // ?bench=1: three X searches at once, to see whether paid calls run side by side
+  if (req.nextUrl.searchParams.get("bench") === "1") {
+    const t0 = Date.now();
+    const receipts: any[] = [];
+    const one = (q: string) => searchX(q, "latest", receipts).then(() => Date.now() - t0, (e) => `err ${e}`);
+    const out = await Promise.all([one("@celo within_time:1d"), one("@minipay within_time:1d"), one("@valora within_time:1d")]);
+    return NextResponse.json({ finishedAtMs: out, receipts: receipts.map((r) => r.at) });
+  }
   // ?sqd=<chain>: confirms the free SQD route serves this chain
   const sqd = req.nextUrl.searchParams.get("sqd");
   if (sqd) return NextResponse.json(await sqdHead(sqd as Chain).catch((e) => ({ error: String(e) })));

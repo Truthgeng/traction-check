@@ -44,6 +44,8 @@ export async function paidPost(
   const url = `${GATEWAY}${path}`;
   const sandbox = isSandbox();
   const network = sandbox ? "celo-sepolia" : "celo";
+  const t0 = Date.now();
+  const marks: Record<string, number> = {};
 
   const res = await x402.payingFetch(
     {
@@ -67,7 +69,10 @@ export async function paidPost(
       body: JSON.stringify(body),
       maxAmount: toAtomic(maxWhole),
       maxRetries: 1,
+      onChallenge: () => { marks.challenge = Date.now() - t0; },
+      onBeforePayment: () => { marks.signed = Date.now() - t0; },
       onPayment: (info) => {
+        marks.paid = Date.now() - t0;
         receipts.push({
           service,
           url,
@@ -83,6 +88,8 @@ export async function paidPost(
   );
 
   const text = await res.text();
+  marks.done = Date.now() - t0;
+  console.log("paid call", service, JSON.stringify(marks));
   if (!res.ok) {
     // Do not retry. Report what came back so it can be checked by hand.
     throw new Error(`${service} returned ${res.status}: ${text.slice(0, 300)}`);
