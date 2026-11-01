@@ -78,6 +78,8 @@ export async function GET(req: NextRequest) {
         [`@${report.input.handle}`, contract].filter(Boolean).join(" / "), report.social, report.chain, extra,
       );
       report.paidCalls.push(...extra);
+      // ?full=1 returns the whole report, e.g. to film a demo with real data
+      if (req.nextUrl.searchParams.get("full") === "1") return NextResponse.json({ resultMs, report });
       return NextResponse.json({
         resultMs,
         summaryMs: Date.now() - t0 - resultMs,
