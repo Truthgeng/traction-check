@@ -62,18 +62,22 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Re
     return true;
   };
 
-  // Busy tokens sometimes get "internal error" on a chunk. Retry those once, split in
-  // half, in one more paid batch, instead of cutting the window short.
-  const failed = chunks.filter((c, i) => !take(replies[i], c));
-  if (failed.length) {
-    const halves = failed.flatMap((c) => {
+  // Busy tokens sometimes get "internal error" on a chunk. Retry those, split in half,
+  // up to 2 more paid batches, instead of cutting the window short.
+  let pending = chunks.filter((c, i) => !take(replies[i], c));
+  const firstError = replies.find((r) => r?.error)?.error;
+  let rounds = 0;
+  while (pending.length && rounds < 2) {
+    rounds++;
+    const halves = pending.flatMap((c) => {
+      if (c.to - c.from < 50) return [c];
       const mid = Math.floor((c.from + c.to) / 2);
       return [{ from: mid + 1, to: c.to }, { from: c.from, to: mid }];
     });
     const retry = await rpcBatch(halves.map(getLogs), receipts).catch(() => [] as (RpcReply | undefined)[]);
-    const stillFailed = halves.filter((c, i) => !take(retry[i], c)).length;
-    console.warn("chainstack retry", JSON.stringify({ chunks: chunks.length, failed: failed.length, stillFailed, error: replies.find((r) => r?.error)?.error }).slice(0, 400));
+    pending = halves.filter((c, i) => !take(retry[i], c));
   }
+  if (rounds) console.log("chainstack retry", JSON.stringify({ chunks: chunks.length, rounds, stillFailed: pending.length, error: firstError }).slice(0, 400));
   // Hours actually read (if a piece still failed, the report says fewer hours, never more)
   return { transfers, coveredHours: (blocksRead * CELO_BLOCK_SECONDS) / 3600 };
 }
