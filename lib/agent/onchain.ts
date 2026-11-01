@@ -17,7 +17,7 @@ const topicToAddr = (t: string) => ("0x" + t.slice(-40)).toLowerCase();
 // ---------------------------------------------------------------------------
 
 const CELO_BLOCK_SECONDS = 1; // Celo L2 targets 1s blocks; checked against real timestamps below
-const LOG_CHUNK = 2_000; // smaller pieces: busy tokens fail on big ones
+const LOG_CHUNK = 3_000;
 
 type RpcReply = { id: number; result?: any; error?: { message: string } };
 
@@ -62,22 +62,25 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Re
     return true;
   };
 
-  // Busy tokens sometimes get "internal error" on a chunk. Retry those, split in half,
-  // up to 2 more paid batches, instead of cutting the window short.
-  let pending = chunks.filter((c, i) => !take(replies[i], c));
-  const firstError = replies.find((r) => r?.error)?.error;
-  let rounds = 0;
-  while (pending.length && rounds < 2) {
-    rounds++;
-    const halves = pending.flatMap((c) => {
-      if (c.to - c.from < 50) return [c];
-      const mid = Math.floor((c.from + c.to) / 2);
-      return [{ from: mid + 1, to: c.to }, { from: c.from, to: mid }];
-    });
-    const retry = await rpcBatch(halves.map(getLogs), receipts).catch(() => [] as (RpcReply | undefined)[]);
-    pending = halves.filter((c, i) => !take(retry[i], c));
+  // Busy tokens (airdrops, big bursts) make Chainstack fail on some chunks no matter how
+  // small. Those stretches are read from SQD instead, which is free and streams in pages,
+  // so the window stays a full 24h without more paid calls or extra waiting.
+  const pending = chunks.filter((c, i) => !take(replies[i], c));
+  if (pending.length) {
+    const ds = `${GATEWAY}/sqd/datasets/${SQD_DATASET.celo}`;
+    const deadline = Date.now() + 25_000;
+    let next = 0;
+    let missed = 0;
+    await Promise.all(Array.from({ length: Math.min(4, pending.length) }, async () => {
+      while (next < pending.length) {
+        const c = pending[next++];
+        const part = await sqdRange(ds, contract, c.from, c.to, deadline).catch(() => null);
+        if (part?.complete) { transfers.push(...part.transfers); blocksRead += c.to - c.from + 1; }
+        else missed++;
+      }
+    }));
+    console.log("chainstack gaps filled from sqd", JSON.stringify({ chunks: chunks.length, gaps: pending.length, missed }));
   }
-  if (rounds) console.log("chainstack retry", JSON.stringify({ chunks: chunks.length, rounds, stillFailed: pending.length, error: firstError }).slice(0, 400));
   // Hours actually read (if a piece still failed, the report says fewer hours, never more)
   return { transfers, coveredHours: (blocksRead * CELO_BLOCK_SECONDS) / 3600 };
 }
