@@ -6,6 +6,7 @@ import { withAttribution, verifyTx } from "@celo/attribution-tags";
 import { timingSafeEqual } from "node:crypto";
 import { normaliseKey } from "@/lib/key";
 import { runCheck } from "@/lib/agent/run";
+import { writeVerdict } from "@/lib/agent/verdict";
 import { sqdHead } from "@/lib/agent/onchain";
 import { searchX } from "@/lib/agent/social";
 import type { Chain } from "@/lib/types";
@@ -15,7 +16,7 @@ import type { Chain } from "@/lib/types";
  * POST with header x-admin-secret: <ADMIN_SECRET>. Refuses if the agent is already registered.
  */
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const REGISTRY = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"; // ERC-8004 Identity Registry, Celo mainnet
 // Stablecoins the fee can be paid in (Celo fee abstraction). Source: docs.celo.org/tooling/contracts/fee-currencies
@@ -63,8 +64,23 @@ export async function GET(req: NextRequest) {
   const check = req.nextUrl.searchParams.get("check");
   if (check) {
     try {
-      const report = await runCheck({ handle: check.replace(/^@/, ""), chain: "celo" }, { skipCache: true });
+      // Same two steps a visitor's page runs: the result, then the AI summary
+      const contract = req.nextUrl.searchParams.get("contract") as `0x${string}` | null;
+      const chainId = (req.nextUrl.searchParams.get("chain") || "celo") as Chain;
+      const t0 = Date.now();
+      const report = await runCheck(
+        { handle: check.replace(/^@/, "") || undefined, contract: contract || undefined, chain: chainId },
+        { skipCache: true },
+      );
+      const resultMs = Date.now() - t0;
+      const extra: any[] = [];
+      report.verdict = await writeVerdict(
+        [`@${report.input.handle}`, contract].filter(Boolean).join(" / "), report.social, report.chain, extra,
+      );
+      report.paidCalls.push(...extra);
       return NextResponse.json({
+        resultMs,
+        summaryMs: Date.now() - t0 - resultMs,
         mode: report.mode,
         profile: report.profile?.handle ?? null,
         postsTagging: report.postsTagging,

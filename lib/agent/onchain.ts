@@ -32,14 +32,17 @@ async function rpcBatch(calls: { method: string; params: unknown[] }[], receipts
 }
 
 async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Read> {
-  // Batch 1: where is the chain head
-  const [head] = await rpcBatch([{ method: "eth_blockNumber", params: [] }], receipts);
-  if (!head?.result) throw new Error("Could not read Celo block number");
-  const latest = Number(BigInt(head.result));
+  // Where the chain head is: read free from SQD, so the only paid Chainstack call
+  // is the one that reads the transfers (each paid call adds ~7s of settlement)
+  const headRes = await sqdFetch(`${GATEWAY}/sqd/datasets/${SQD_DATASET.celo}/head`);
+  if (!headRes.ok) throw new Error(`Could not read Celo block number (${headRes.status})`);
+  const head = await headRes.json();
+  const latest = Number(head.number ?? head.block_number ?? head.height);
+  if (!Number.isFinite(latest)) throw new Error("Could not read Celo block number");
   const span = Math.floor((WINDOW_HOURS * 3600) / CELO_BLOCK_SECONDS);
   const start = Math.max(0, latest - span);
 
-  // Batch 2: every Transfer log across the window, in chunks, NEWEST chunk first
+  // One paid batch: every Transfer log across the window, in chunks, NEWEST chunk first
   const chunks: { from: number; to: number }[] = [];
   for (let to = latest; to >= start; to -= LOG_CHUNK) chunks.push({ from: Math.max(start, to - LOG_CHUNK + 1), to });
   const replies = await rpcBatch(

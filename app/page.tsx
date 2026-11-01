@@ -145,6 +145,7 @@ export default function Home() {
   const [injected, setInjected] = useState<InjectedWallet[]>([]);
   const [walletName, setWalletName] = useState("");
   const [report, setReport] = useState<Report | null>(null);
+  const [writing, setWriting] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -245,6 +246,7 @@ export default function Home() {
       if (!res.ok) throw new Error(data.error || "Something went wrong.");
       setReport(data);
       loadConfig(); // refresh the free checks left
+      if (data.summaryToken) writeSummary(data);
     } catch (e: any) {
       if (mustPay) reportWalletError("pay", e, walletName);
       const aborted = e?.name === "AbortError" || /abort/i.test(e?.message ?? "");
@@ -257,6 +259,24 @@ export default function Home() {
       );
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Step two: the agent pays for the AI summary while the reader is already looking at the result */
+  async function writeSummary(r: Report) {
+    setWriting(true);
+    try {
+      const subject = [r.input.handle && `@${r.input.handle}`, r.input.contract && `${r.input.contract} on ${r.input.chain}`].filter(Boolean).join(" / ");
+      const res = await fetch("/api/summary", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token: r.summaryToken, input: r.input, subject, social: r.social, chain: r.chain }),
+      });
+      if (!res.ok) return;
+      const { verdict, paidCalls } = await res.json();
+      setReport((cur) => (cur && cur.generatedAt === r.generatedAt ? { ...cur, verdict, paidCalls: [...cur.paidCalls, ...paidCalls] } : cur));
+    } catch { /* the rule summary stays */ } finally {
+      setWriting(false);
     }
   }
 
@@ -332,7 +352,7 @@ export default function Home() {
           </div>
         </div>
         <button className="primary" disabled={busy || connecting || (!handle && !contract && !(mustPay && !wallet))} onClick={run}>{buttonText}</button>
-        {busy && <p className="hint">Reading X and the chain. This usually takes 1 to 2 minutes, so keep this tab open and the screen on.</p>}
+        {busy && <p className="hint">Reading X and the chain. This usually takes about 30 seconds, so keep this tab open.</p>}
         {!busy && config?.paid && !mustPay && (
           <p className="hint">First {config.freeChecks} checks are free. No wallet needed, and connecting one early won't use them up.</p>
         )}
@@ -365,6 +385,7 @@ export default function Home() {
             <div className={`score ${tone(report.verdict.score)}`}>{report.verdict.score}<small>/100</small></div>
             <p key={report.generatedAt} className={`stamp label ${tone(report.verdict.score)}`}>{report.verdict.label}</p>
             <p className="summary">{report.verdict.summary}</p>
+            {writing && <p className="writing">The agent is writing its own read on these numbers…</p>}
           </div>
 
           {report.cachedAt && (

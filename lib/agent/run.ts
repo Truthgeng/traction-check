@@ -5,6 +5,7 @@ import { mockReport } from "./mock";
 import { mode, isMock, isSandbox } from "./mode";
 import type { CheckInput, PaidCall, Profile, Report } from "@/lib/types";
 import { getCached, putCached } from "@/lib/cache";
+import { makeSummaryToken } from "@/lib/summary-token";
 
 export { isMock, isSandbox, mode };
 
@@ -14,10 +15,19 @@ export class CheckError extends Error {
 }
 
 /** The full agent run for one check. */
-export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } = {}): Promise<Report> {
+/**
+ * summary "later" (the default) returns as soon as the data is in, with the rule
+ * verdict, and a token the page uses to have the AI summary written next.
+ * "inline" waits for the AI summary (used by the operator check).
+ */
+export async function runCheck(
+  input: CheckInput,
+  opts: { skipCache?: boolean; summary?: "later" | "inline" } = {},
+): Promise<Report> {
   if (isMock()) return mockReport(input);
   const cached = opts.skipCache ? null : getCached(input);
-  if (cached) return cached;
+  // A cached result never hands out another summary token, so it can't trigger a second paid summary
+  if (cached) return { ...cached, summaryToken: undefined };
   const sandbox = isSandbox();
   const t0 = Date.now();
   const took: Record<string, number> = {};
@@ -41,9 +51,10 @@ export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } 
     (async () => {
       // Posts that tag the project, not posts by the project itself
       const q = handle ? `@${handle} -from:${handle} within_time:7d` : `${input.contract} within_time:7d`;
-      // 2 pages of latest + 1 page of top: a bigger sample keeps results steady between checks
+      // 1 page of latest + 1 page of top, side by side. buy settles one payment per wallet
+      // about every 7 seconds, so every extra paid call adds that much to the wait.
       const [latest, top] = await Promise.all([
-        lap("xLatest", searchXPages(q, "latest", 2, receipts)),
+        lap("xLatest", searchXPages(q, "latest", 1, receipts)),
         lap("xTop", searchXPages(q, "top", 1, receipts)),
       ]);
       const found = [...new Map([...latest, ...top].map((p) => [p.id ?? p.text, p])).values()];
@@ -74,11 +85,14 @@ export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } 
   }
 
   // Cencori has no test network on buy, so test mode writes the summary from the rules alone
+  const later = opts.summary !== "inline";
   const verdict = !social && !chain
     ? ruleVerdict(null, null)
-    : sandbox
+    : sandbox || later
       ? ruleVerdict(social, chain)
       : await lap("verdict", writeVerdict(subject, social, chain, receipts));
+  // The AI summary comes as a second step, so the result shows as soon as the data is in
+  const summaryToken = later && !sandbox && (social || chain) ? makeSummaryToken({ input, subject, social, chain }) : undefined;
   // One line per check, so slow checks can be traced to the step that held them up
   console.log("check timing", JSON.stringify({ subject, ms: Date.now() - t0, steps: took, errors }));
 
@@ -91,6 +105,7 @@ export async function runCheck(input: CheckInput, opts: { skipCache?: boolean } 
     chain,
     verdict,
     paidCalls: receipts,
+    summaryToken,
     mock: false,
     mode: mode(),
     generatedAt: new Date().toISOString(),

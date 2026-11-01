@@ -19,6 +19,12 @@ export function getCached(i: CheckInput): Report | null {
   return { ...hit.report, cachedAt: new Date(hit.at).toISOString() };
 }
 
+/** Stores the AI summary onto the cached result, so a repeat check shows it straight away */
+export function updateCached(i: CheckInput, patch: Partial<Report>) {
+  const hit = store.get(cacheKey(i));
+  if (hit) hit.report = { ...hit.report, ...patch };
+}
+
 export function putCached(i: CheckInput, report: Report) {
   if (store.size >= MAX_ENTRIES) store.delete(store.keys().next().value!);
   store.set(cacheKey(i), { at: Date.now(), report });

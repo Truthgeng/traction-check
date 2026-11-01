@@ -155,3 +155,7 @@ ul.list.pos li::before { content: "\2713"; color: var(--good); font-size: 15px; 
 .pill-btn { font: 600 13px var(--sans); border-radius: 999px; padding: 6px 12px; color: var(--muted); }
 @media (min-width: 600px) { .sheet-bg { align-items: center; } }
 .wicon { vertical-align: -4px; margin-right: 8px; border-radius: 4px; }
+.writing { grid-column: 1 / -1; margin: 0; font-size: 14px; color: var(--muted); }
+.writing::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--uv); margin-right: 8px; animation: blink 1s ease-in-out infinite alternate; }
+@keyframes blink { from { opacity: 0.25; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .writing::before { animation: none; } }

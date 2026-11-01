@@ -120,4 +120,7 @@ export type Report = {
   generatedAt: string;
   /** Set when this result was served from the 15-minute cache */
   cachedAt?: string;
+  /** The AI summary is written in a second step, so the result shows sooner.
+   *  This signed token lets the page ask for it exactly once. */
+  summaryToken?: string;
 };
