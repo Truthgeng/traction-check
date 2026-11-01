@@ -75,7 +75,7 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Re
       while (next < pending.length) {
         const c = pending[next++];
         const part = await sqdRange(ds, contract, c.from, c.to, deadline).catch(() => null);
-        if (part?.complete) { transfers.push(...part.transfers); blocksRead += c.to - c.from + 1; }
+        if (part?.complete) { for (const t of part.transfers) transfers.push(t); blocksRead += c.to - c.from + 1; }
         else missed++;
       }
     }));
@@ -193,7 +193,7 @@ async function sqdTransfers(chain: Chain, contract: string): Promise<Read> {
   let slicesRead = 0;
   for (const part of results) {
     if (!part?.complete) break;
-    transfers.push(...part.transfers);
+    for (const t of part.transfers) transfers.push(t);
     slicesRead++;
   }
   return { transfers, coveredHours: (slicesRead / ranges.length) * WINDOW_HOURS };
