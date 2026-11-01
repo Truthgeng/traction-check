@@ -57,7 +57,12 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Re
   let reachedBlock = latest;
   for (let i = 0; i < chunks.length; i++) {
     const r = replies[i];
-    if (!r?.result) break; // a failed chunk ends the read here, so the covered window stays honest
+    if (!r?.result) {
+      // a failed chunk ends the read here, so the covered window stays honest
+      const failed = replies.slice(i).filter((x) => !x?.result).length;
+      console.warn("chainstack chunk failed", JSON.stringify({ at: i, of: chunks.length, failed, error: r?.error ?? (r ? "no result" : "missing reply") }).slice(0, 600));
+      break;
+    }
     for (const log of r.result as { topics: string[] }[]) {
       if (log.topics?.length >= 3) transfers.push({ from: topicToAddr(log.topics[1]), to: topicToAddr(log.topics[2]) });
     }

@@ -7,7 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 import { normaliseKey } from "@/lib/key";
 import { runCheck } from "@/lib/agent/run";
 import { writeVerdict } from "@/lib/agent/verdict";
-import { sqdHead } from "@/lib/agent/onchain";
+import { sqdHead, chainSignals } from "@/lib/agent/onchain";
 import { searchX } from "@/lib/agent/social";
 import type { Chain } from "@/lib/types";
 
@@ -56,6 +56,14 @@ export async function GET(req: NextRequest) {
     const one = (q: string) => searchX(q, "latest", receipts).then(() => Date.now() - t0, (e) => `err ${e}`);
     const out = await Promise.all([one("@celo within_time:1d"), one("@minipay within_time:1d"), one("@valora within_time:1d")]);
     return NextResponse.json({ finishedAtMs: out, receipts: receipts.map((r) => r.at) });
+  }
+  // ?celoread=<contract>: only the Chainstack read (one paid call), to debug coverage
+  const celoread = req.nextUrl.searchParams.get("celoread");
+  if (celoread) {
+    const receipts: any[] = [];
+    const t0 = Date.now();
+    const sig = await chainSignals("celo", celoread as `0x${string}`, receipts, { paidCelo: true }).catch((e) => ({ error: String(e) }));
+    return NextResponse.json({ ms: Date.now() - t0, sig, receipts: receipts.length });
   }
   // ?sqd=<chain>: confirms the free SQD route serves this chain
   const sqd = req.nextUrl.searchParams.get("sqd");
