@@ -427,6 +427,13 @@ export default function Home() {
           {report.chain && (
             <div className="card">
               <h3>Onchain, last {report.chain.windowHours}h</h3>
+              {!!report.chain.skippedHours && (
+                <p className="note">
+                  {report.chain.skippedHours < 1.5 ? "About 1 hour" : `About ${Math.round(report.chain.skippedHours)} hours`} of this
+                  window held too many transfers to read at once, often a sign of a mass airdrop or spam burst, so
+                  {report.chain.skippedHours < 1.5 ? " it isn't" : " they aren't"} counted below.
+                </p>
+              )}
               <div className="stats">
                 <div className="stat"><b>{report.chain.transfers}</b><span>transfers</span></div>
                 <div className="stat"><b>{report.chain.uniqueSenders}</b><span>sending wallets</span></div>

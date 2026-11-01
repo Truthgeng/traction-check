@@ -8,7 +8,7 @@ const WINDOW_HOURS = 24;
 
 type Transfer = { from: string; to: string };
 /** What a reader got: the transfers, and how many hours back it actually reached */
-type Read = { transfers: Transfer[]; coveredHours: number };
+type Read = { transfers: Transfer[]; coveredHours: number; skippedHours?: number };
 
 const topicToAddr = (t: string) => ("0x" + t.slice(-40)).toLowerCase();
 
@@ -62,27 +62,13 @@ async function celoTransfers(contract: string, receipts: PaidCall[]): Promise<Re
     return true;
   };
 
-  // Busy tokens (airdrops, big bursts) make Chainstack fail on some chunks no matter how
-  // small. Those stretches are read from SQD instead, which is free and streams in pages,
-  // so the window stays a full 24h without more paid calls or extra waiting.
-  const pending = chunks.filter((c, i) => !take(replies[i], c));
-  if (pending.length) {
-    const ds = `${GATEWAY}/sqd/datasets/${SQD_DATASET.celo}`;
-    const deadline = Date.now() + 25_000;
-    let next = 0;
-    let missed = 0;
-    await Promise.all(Array.from({ length: Math.min(4, pending.length) }, async () => {
-      while (next < pending.length) {
-        const c = pending[next++];
-        const part = await sqdRange(ds, contract, c.from, c.to, deadline).catch(() => null);
-        if (part?.complete) { for (const t of part.transfers) transfers.push(t); blocksRead += c.to - c.from + 1; }
-        else missed++;
-      }
-    }));
-    console.log("chainstack gaps filled from sqd", JSON.stringify({ chunks: chunks.length, gaps: pending.length, missed }));
-  }
+  // Some stretches hold so many transfers (mass airdrops, spam bursts) that Chainstack
+  // refuses them however small the piece. Reading them elsewhere takes too long, so they are
+  // skipped and the report says how many hours were skipped and why.
+  const skippedBlocks = chunks.filter((c, i) => !take(replies[i], c)).reduce((n, c) => n + c.to - c.from + 1, 0);
+  if (skippedBlocks) console.log("chainstack skipped", JSON.stringify({ chunks: chunks.length, skippedBlocks }));
   // Hours actually read (if a piece still failed, the report says fewer hours, never more)
-  return { transfers, coveredHours: (blocksRead * CELO_BLOCK_SECONDS) / 3600 };
+  return { transfers, coveredHours: (blocksRead * CELO_BLOCK_SECONDS) / 3600, skippedHours: (skippedBlocks * CELO_BLOCK_SECONDS) / 3600 };
 }
 
 const hex = (n: number) => "0x" + n.toString(16);
@@ -212,7 +198,7 @@ export async function chainSignals(
   const useChainstack = chain === "celo" && opts.paidCelo;
   const read = useChainstack ? await celoTransfers(contract, receipts) : await sqdTransfers(chain, contract);
   if (!read.transfers.length && read.coveredHours === 0) throw new Error(`No ${chain} data could be read`);
-  return summarise(chain, read.transfers, useChainstack ? "chainstack" : "sqd", read.coveredHours);
+  return summarise(chain, read.transfers, useChainstack ? "chainstack" : "sqd", read.coveredHours, read.skippedHours);
 }
 
 export function summarise(
@@ -220,6 +206,7 @@ export function summarise(
   transfers: Transfer[],
   source: ChainSignals["source"],
   coveredHours = WINDOW_HOURS,
+  skippedHours = 0,
 ): ChainSignals {
   const zero = "0x0000000000000000000000000000000000000000";
   const senders = new Set<string>();
@@ -261,8 +248,9 @@ export function summarise(
 
   return {
     chain,
-    // the hours actually read, not the hours asked for
-    windowHours: Math.max(1, Math.round(coveredHours)),
+    // the hours the read spanned; skipped stretches are reported separately
+    windowHours: Math.max(1, Math.round(coveredHours + skippedHours)),
+    ...(skippedHours >= 0.5 ? { skippedHours: Math.round(skippedHours * 10) / 10 } : {}),
     transfers: transfers.length,
     uniqueSenders: senders.size,
     uniqueReceivers: receivers.size,

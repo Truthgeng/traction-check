@@ -88,6 +88,8 @@ export type SocialSignals = {
 export type ChainSignals = {
   chain: Chain;
   windowHours: number;
+  /** Hours inside the window that held too many transfers to read (e.g. a mass airdrop) */
+  skippedHours?: number;
   transfers: number;
   uniqueSenders: number;
   uniqueReceivers: number;
