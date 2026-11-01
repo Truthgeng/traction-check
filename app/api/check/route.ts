@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { withX402, x402ResourceServer } from "@x402/next";
+import { NextRequest, NextResponse, after } from "next/server";
+import { NextAdapter, x402HTTPResourceServer, x402ResourceServer } from "@x402/next";
 import { HTTPFacilitatorClient, type RouteConfig } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { runCheck, CheckError } from "@/lib/agent/run";
@@ -78,7 +78,62 @@ function paidHandler() {
     ],
     description: "One traction check: X activity, onchain activity and a verdict",
   };
-  return withX402(handler, route, server);
+  return settleAfterResponse(handler, route, server);
+}
+
+/**
+ * Same flow as withX402 (verify the payment, run the check, only charge if it
+ * worked), except the charge is settled after the result is sent. Celo's
+ * facilitator can take 30s+ to settle, and the person shouldn't wait for that.
+ */
+function settleAfterResponse(routeHandler: typeof handler, route: RouteConfig, server: x402ResourceServer) {
+  const http = new x402HTTPResourceServer(server, route);
+  let ready: Promise<void> | null = null;
+  const init = () => (ready ??= http.initialize().catch((e: unknown) => { ready = null; throw e; }));
+
+  return async (req: NextRequest): Promise<NextResponse> => {
+    await init();
+    const path = req.nextUrl.pathname;
+    const adapter = new NextAdapter(req);
+    const context = {
+      adapter,
+      path,
+      decodedPath: path,
+      method: req.method,
+      paymentHeader: adapter.getHeader("payment-signature") || adapter.getHeader("x-payment"),
+    };
+    const result: any = await http.processHTTPRequest(context as any);
+    if (result.type === "payment-error") {
+      const r = result.response;
+      const headers = new Headers(r.headers);
+      headers.set("Content-Type", "application/json");
+      return new NextResponse(JSON.stringify(r.body || {}), { status: r.status, headers });
+    }
+    if (result.type !== "payment-verified") return routeHandler(req);
+
+    const response = await routeHandler(req);
+    if (response.status >= 400) {
+      await result.cancellationDispatcher?.cancel?.({ reason: "handler_failed", responseStatus: response.status }).catch(() => {});
+      return response; // the check failed, so the payment is never settled
+    }
+    const responseBody = Buffer.from(await response.clone().arrayBuffer());
+    const responseHeaders: Record<string, string> = {};
+    response.headers.forEach((v, k) => { responseHeaders[k] = v; });
+    after(async () => {
+      const t0 = Date.now();
+      try {
+        const s = await http.processSettlement(
+          result.paymentPayload, result.paymentRequirements, result.declaredExtensions,
+          { request: context, responseBody, responseHeaders } as any, undefined, result.beforeHandlerSettlement,
+        );
+        console.log("user payment settled", JSON.stringify({ ok: s.success, ms: Date.now() - t0 }));
+      } catch (e) {
+        console.error("user payment settlement failed", e);
+      }
+    });
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  };
 }
 
 const paid = paidHandler();
