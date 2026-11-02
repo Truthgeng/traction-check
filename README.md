@@ -48,9 +48,11 @@ The test wallet is for test funds only. Never send real money to it.
 1. `npm run wallet` creates a fresh agent wallet and saves the key in `.env.local` on your machine. Send it $5 to $10 of USDC on Celo mainnet. Back up `.env.local`.
 2. Get an API key at https://x402.celo.org (connect wallet, create key, sign). Put it in `X402_API_KEY`.
 3. Set `PAY_TO` to the wallet that receives user payments.
-4. Put the attribution code from your Loops House enrollment in `ATTRIBUTION_CODE`.
+4. Put the attribution code from your Loops House enrollment in `ATTRIBUTION_CODE`. Keep it in `.env.local` and your Vercel environment variables. Do not commit `.env.local` or your wallet private key.
 5. Deploy to Vercel with all the variables, `MOCK=0`, and `SITE_URL` set to the live address.
-6. `npm run register` registers the agent's ERC-8004 identity from the agent wallet (gas paid in USDC). Copy the `AGENT_ID` it prints into Vercel and redeploy.
+6. `npm run register` registers the agent's ERC-8004 identity from the agent wallet (gas paid in USDC). The registration transaction is sent through the Celo attribution SDK using `ATTRIBUTION_CODE`. Copy the `AGENT_ID` it prints into Vercel and redeploy.
+
+**Attribution and x402:** The SDK tags transactions signed directly by the agent wallet. Celo's hosted x402 facilitator currently submits x402 settlements without an attribution tag, so those payments are associated with your project through the `PAY_TO` wallet address. Include that address when the hackathon asks for your x402 payment wallet. Tags cannot be added to transactions after they have been sent.
 
 ## Before the first live call, confirm against the live catalog
 
