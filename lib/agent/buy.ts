@@ -12,6 +12,16 @@ function toAtomic(amount: string): bigint {
   return BigInt(whole || "0") * 1_000_000n + BigInt((frac + "000000").slice(0, 6));
 }
 
+// Daily spend cap for the agent wallet (whole USD), as buy's own guidance recommends.
+// Kept per server instance; resets each UTC day.
+const DAILY_CAP = toAtomic(process.env.DAILY_SPEND_CAP || "3");
+let spend = { day: "", atomic: 0n };
+function reserve(max: bigint) {
+  const day = new Date().toISOString().slice(0, 10);
+  if (spend.day !== day) spend = { day, atomic: 0n };
+  if (spend.atomic + max > DAILY_CAP) throw new Error("The agent's daily spend cap is reached. Try again tomorrow.");
+}
+
 let cached: { key: string; account: ReturnType<typeof privateKeyToAccount> } | null = null;
 function agentAccount() {
   // Test mode uses its own key so a test wallet is never mixed up with the real one
@@ -42,6 +52,7 @@ export async function paidPost(
   receipts: PaidCall[],
 ): Promise<unknown> {
   const url = `${GATEWAY}${path}`;
+  if (!isSandbox()) reserve(toAtomic(maxWhole));
   const sandbox = isSandbox();
   const network = sandbox ? "celo-sepolia" : "celo";
   const t0 = Date.now();
@@ -73,6 +84,7 @@ export async function paidPost(
       onBeforePayment: () => { marks.signed = Date.now() - t0; },
       onPayment: (info) => {
         marks.paid = Date.now() - t0;
+        if (!sandbox) spend.atomic += BigInt(info.amount || "0");
         receipts.push({
           service,
           url,

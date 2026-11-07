@@ -5,7 +5,7 @@ import type { Account, PaidCall, Post, Profile, SocialSignals } from "@/lib/type
  * X search through the buy gateway.
  * Route and body follow buy's published guide:
  *   POST /v1/social/x/posts/search  {"query": "...", "type": "latest" | "top"}
- * CONFIRM against the live catalog before going live (GET /v1/catalog).
+ * Confirmed live on Celo mainnet: every check pays this route (see the README for tx hashes).
  */
 const X_SEARCH_PATH = "/v1/social/x/posts/search";
 

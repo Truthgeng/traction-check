@@ -12,7 +12,7 @@ Built for the Agents on Open Rails Hackathon, Build with buy track.
    - **X post search** (2 calls side by side: latest and top posts tagging the project, last 7 days)
    - **Chainstack Celo RPC** (one batch reading 24h of token transfer logs, for Celo tokens)
    - **Cencori LLM inference** (writes the plain-language summary)
-   - SQD data for the other chains (free route on the buy gateway)
+   - Not a paid service: for Base, Ethereum, Arbitrum, BNB Chain and Hyperliquid tokens the agent reads SQD through buy's free route, so it is not counted among the paid services above
 3. The score comes from fixed rules (posting accounts, their age and size, copy-paste text, wallet spread, back-and-forth transfers), so the same project gets the same score. Results are cached for 15 minutes.
 4. The result shows as soon as the data is in (about 30 seconds). The Cencori summary is written as a second step while the user is reading, through a one-time signed token so it can't be triggered without a real check.
 5. Every paid call the agent made is listed on the report with its Celo transaction.
