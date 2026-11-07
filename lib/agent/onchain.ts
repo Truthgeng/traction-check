@@ -1,7 +1,7 @@
 import { paidPost, GATEWAY } from "./buy";
 import type { Chain, ChainSignals, PaidCall } from "@/lib/types";
 
-const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+export const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const WINDOW_HOURS = 24;
 // Every check reads the same fixed window ending at the newest block, so two checks
 // minutes apart look at almost exactly the same activity.
@@ -10,7 +10,7 @@ type Transfer = { from: string; to: string };
 /** What a reader got: the transfers, and how many hours back it actually reached */
 type Read = { transfers: Transfer[]; coveredHours: number; skippedHours?: number };
 
-const topicToAddr = (t: string) => ("0x" + t.slice(-40)).toLowerCase();
+export const topicToAddr = (t: string) => ("0x" + t.slice(-40)).toLowerCase();
 
 // ---------------------------------------------------------------------------
 // Celo: paid reads through Chainstack on the buy gateway ($0.01 per batch of up to 2000 calls)
@@ -77,7 +77,7 @@ const hex = (n: number) => "0x" + n.toString(16);
 // Other chains: SQD through the buy gateway (free, no payment)
 // ---------------------------------------------------------------------------
 
-const SQD_DATASET: Record<Chain, string> = {
+export const SQD_DATASET: Record<Chain, string> = {
   celo: "celo-mainnet",
   base: "base-mainnet",
   ethereum: "ethereum-mainnet",
@@ -87,7 +87,7 @@ const SQD_DATASET: Record<Chain, string> = {
 };
 
 /** SQD is free and unpaid, so retrying it is safe. Waits out its rate limit (Retry-After). */
-async function sqdFetch(url: string, init?: RequestInit, tries = 4): Promise<Response> {
+export async function sqdFetch(url: string, init?: RequestInit, tries = 4): Promise<Response> {
   let last: Response | null = null;
   for (let i = 0; i < tries; i++) {
     try {
