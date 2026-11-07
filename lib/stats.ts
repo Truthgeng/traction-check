@@ -1,8 +1,6 @@
-import { GATEWAY } from "@/lib/agent/buy";
-import { SQD_DATASET, TRANSFER_TOPIC, sqdFetch, topicToAddr } from "@/lib/agent/onchain";
 
 /**
- * Live usage, read straight from Celo mainnet (through buy's free SQD route), so
+ * Live usage, read straight from Celo mainnet (through the Blockscout explorer API), so
  * anyone can check it on Celoscan:
  *  - every payment the agent wallet made to buy services
  *  - every payment users made to the site (PayTo)
@@ -21,51 +19,35 @@ export type Stats = {
   byDay: { day: string; agentCalls: number; userPayments: number }[];
 };
 
-const pad = (a: string) => "0x" + a.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+const BLOCKSCOUT = "https://celo.blockscout.com/api/v2";
 
-async function logs(ds: string, filter: Record<string, unknown>, fromBlock: number, toBlock: number) {
+/** Token transfers into or out of one address, newest first, back to launch */
+async function transfers(address: string, direction: "from" | "to") {
   const out: (Payment & { time: number })[] = [];
-  let cursor = fromBlock;
-  const deadline = Date.now() + 25_000;
-  let busy = 0;
-  while (cursor <= toBlock && Date.now() < deadline) {
-    const res = await sqdFetch(`${ds}/stream`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        type: "evm",
-        fromBlock: cursor,
-        toBlock,
-        fields: { block: { number: true, timestamp: true }, log: { topics: true, data: true, transactionHash: true } },
-        logs: [{ address: [USDT, USDC], topic0: [TRANSFER_TOPIC], ...filter }],
-      }),
+  let next = "";
+  for (let page = 0; page < 30; page++) {
+    const res = await fetch(`${BLOCKSCOUT}/addresses/${address}/token-transfers?type=ERC-20&filter=${direction}${next}`, {
+      headers: { accept: "application/json" },
     });
-    if (res.status === 529 || res.status === 503 || res.status === 429) {
-      // SQD is busy: wait and try the same range again
-      if (++busy > 6) throw new Error(`SQD busy (${res.status})`);
-      await new Promise((r) => setTimeout(r, 1500 * busy));
-      continue;
+    if (!res.ok) throw new Error(`Blockscout ${res.status}`);
+    const json = await res.json();
+    let older = false;
+    for (const it of json.items ?? []) {
+      const time = Date.parse(it.timestamp) / 1000;
+      if (time < LAUNCH) { older = true; break; }
+      const token = String(it.token?.address_hash ?? it.token?.address ?? "").toLowerCase();
+      if (token !== USDT && token !== USDC) continue;
+      out.push({
+        from: String(it.from?.hash).toLowerCase(),
+        to: String(it.to?.hash).toLowerCase(),
+        usd: Number(it.total?.value ?? 0) / 10 ** Number(it.total?.decimals ?? 6),
+        tx: it.transaction_hash,
+        block: Number(it.block_number),
+        time,
+      });
     }
-    if (!res.ok) throw new Error(`SQD ${res.status}`);
-    const lines = (await res.text()).split("\n").filter(Boolean);
-    if (!lines.length) break;
-    let last = cursor;
-    for (const line of lines) {
-      const blk = JSON.parse(line);
-      last = Number(blk.header?.number ?? last);
-      for (const l of blk.logs ?? []) {
-        out.push({
-          from: topicToAddr(l.topics[1]),
-          to: topicToAddr(l.topics[2]),
-          usd: Number(BigInt(l.data)) / 1e6, // USDT and USDC both have 6 decimals
-          tx: l.transactionHash,
-          block: last,
-          time: Number(blk.header?.timestamp ?? 0),
-        });
-      }
-    }
-    if (last < cursor) break;
-    cursor = last + 1;
+    if (older || !json.next_page_params) break;
+    next = "&" + new URLSearchParams(Object.entries(json.next_page_params).map(([k, v]) => [k, String(v)])).toString();
   }
   return out;
 }
@@ -75,14 +57,10 @@ let cache: { at: number; stats: Stats } | null = null;
 export async function getStats(): Promise<Stats> {
   if (cache && Date.now() - cache.at < 10 * 60_000) return cache.stats;
   const payTo = (process.env.PAY_TO || "").toLowerCase();
-  const ds = `${GATEWAY}/sqd/datasets/${SQD_DATASET.celo}`;
-  const [startRes, headRes] = await Promise.all([sqdFetch(`${ds}/timestamps/${LAUNCH}/block`), sqdFetch(`${ds}/head`)]);
-  const start = Number((await startRes.json()).block_number ?? 0);
-  const head = Number((await headRes.json()).number);
-
-  // One after the other: SQD rejects parallel heavy streams
-  const spent = await logs(ds, { topic1: [pad(AGENT)] }, start, head);
-  const received = payTo ? await logs(ds, { topic2: [pad(payTo)] }, start, head) : [];
+  const [spent, received] = await Promise.all([
+    transfers(AGENT, "from"),
+    payTo ? transfers(payTo, "to") : Promise.resolve([]),
+  ]);
   // The agent's own float top-ups are not purchases; buy payments are small per-call amounts
   const calls = spent.filter((p) => p.usd > 0 && p.usd <= 0.05 && p.to !== "0x0000000000000000000000000000000000000000");
   const userPays = received.filter((p) => p.from !== AGENT);
