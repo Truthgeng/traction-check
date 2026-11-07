@@ -25,7 +25,7 @@ export default async function StatsPage() {
             <div className="stats">
               <div className="stat"><b>{s.agent.calls}</b><span>paid calls</span></div>
               <div className="stat"><b>${s.agent.usd.toFixed(2)}</b><span>spent</span></div>
-              <div className="stat"><b>{s.agent.counterparties}</b><span>services paid</span></div>
+              <div className="stat"><b>{s.agent.counterparties}</b><span>addresses paid</span></div>
             </div>
             <p className="hint" style={{ textAlign: "left" }}>From the agent wallet <a href={scan(s.agent.address)}>{short(s.agent.address)}</a> (ERC-8004 agent 10007).</p>
           </section>

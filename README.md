@@ -42,6 +42,8 @@ Paid calls from one real check (`@celo` + the CELO token, Nov 1 2026), all from 
 
 Every report on the site lists its own paid calls with these links, so any check a visitor runs is its own proof.
 
+**Live usage, counted from Celo mainnet:** [traction-check.vercel.app/stats](https://traction-check.vercel.app/stats) shows every paid call the agent has made and every check users have paid for, per day, with links to each transaction.
+
 Billing rules: users pay $0.10 per check after 2 free ones. The payment is settled only when a check completes. A check that fails, or comes back incomplete because a data source failed, is never charged.
 
 ## Signals it checks
