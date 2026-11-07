@@ -77,21 +77,14 @@ The test wallet is for test funds only. Never send real money to it.
 5. Deploy to Vercel with all the variables, `MOCK=0`, and `SITE_URL` set to the live address.
 6. `npm run register` registers the agent's ERC-8004 identity from the agent wallet (gas paid in USDC). Copy the `AGENT_ID` it prints into Vercel and redeploy.
 
-## Before the first live call, confirm against the live catalog
+## buy routes used
 
-The X search route and body come from buy's published guide. Check them once:
+All four are confirmed by real paid calls on Celo mainnet (tx hashes in the proof section above):
 
-```bash
-curl https://gateway.usebuy.ai/v1/catalog
-```
-
-Look for the X post search capability and confirm its `url`, `inputSchema` and price match `lib/agent/social.ts`. Then do one quote (free, no payment):
-
-```bash
-npx --yes @celo/buy@0.8.5 quote -X POST -H 'content-type: application/json' \
-  --data '{"query":"@celo within_time:7d","type":"latest"}' \
-  https://gateway.usebuy.ai/v1/social/x/posts/search
-```
+- `POST /v1/social/x/posts/search` X post search
+- `POST /v1/social/x/tools/tikhub-api-v1-twitter-web-fetch-user-profile` X profile lookup
+- `POST /chainstack/celo` Chainstack Celo RPC (JSON-RPC batch)
+- `POST /cencori/v1/chat/completions` Cencori inference
 
 ## Safety
 
