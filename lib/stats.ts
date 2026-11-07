@@ -27,6 +27,7 @@ async function logs(ds: string, filter: Record<string, unknown>, fromBlock: numb
   const out: (Payment & { time: number })[] = [];
   let cursor = fromBlock;
   const deadline = Date.now() + 25_000;
+  let busy = 0;
   while (cursor <= toBlock && Date.now() < deadline) {
     const res = await sqdFetch(`${ds}/stream`, {
       method: "POST",
@@ -39,6 +40,12 @@ async function logs(ds: string, filter: Record<string, unknown>, fromBlock: numb
         logs: [{ address: [USDT, USDC], topic0: [TRANSFER_TOPIC], ...filter }],
       }),
     });
+    if (res.status === 529 || res.status === 503 || res.status === 429) {
+      // SQD is busy: wait and try the same range again
+      if (++busy > 6) throw new Error(`SQD busy (${res.status})`);
+      await new Promise((r) => setTimeout(r, 1500 * busy));
+      continue;
+    }
     if (!res.ok) throw new Error(`SQD ${res.status}`);
     const lines = (await res.text()).split("\n").filter(Boolean);
     if (!lines.length) break;
@@ -73,10 +80,9 @@ export async function getStats(): Promise<Stats> {
   const start = Number((await startRes.json()).block_number ?? 0);
   const head = Number((await headRes.json()).number);
 
-  const [spent, received] = await Promise.all([
-    logs(ds, { topic1: [pad(AGENT)] }, start, head),
-    payTo ? logs(ds, { topic2: [pad(payTo)] }, start, head) : Promise.resolve([]),
-  ]);
+  // One after the other: SQD rejects parallel heavy streams
+  const spent = await logs(ds, { topic1: [pad(AGENT)] }, start, head);
+  const received = payTo ? await logs(ds, { topic2: [pad(payTo)] }, start, head) : [];
   // The agent's own float top-ups are not purchases; buy payments are small per-call amounts
   const calls = spent.filter((p) => p.usd > 0 && p.usd <= 0.05 && p.to !== "0x0000000000000000000000000000000000000000");
   const userPays = received.filter((p) => p.from !== AGENT);
