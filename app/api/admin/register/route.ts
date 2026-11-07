@@ -57,6 +57,12 @@ export async function GET(req: NextRequest) {
     const out = await Promise.all([one("@celo within_time:1d"), one("@minipay within_time:1d"), one("@valora within_time:1d")]);
     return NextResponse.json({ finishedAtMs: out, receipts: receipts.map((r) => r.at) });
   }
+  // ?probe=<url>: fetch an outside URL from the server (operator debugging)
+  const probe = req.nextUrl.searchParams.get("probe");
+  if (probe) {
+    const r = await fetch(probe).catch((e) => null);
+    return NextResponse.json({ status: r?.status ?? 0, body: r ? (await r.text()).slice(0, 2500) : "fetch failed" });
+  }
   // ?celoread=<contract>: only the Chainstack read (one paid call), to debug coverage
   const celoread = req.nextUrl.searchParams.get("celoread");
   if (celoread) {
