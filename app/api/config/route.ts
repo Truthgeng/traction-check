@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const m = mode();
   const paid = m === "live" && !!process.env.PAY_TO && !!process.env.X402_API_KEY;
-  const atomic = Number(process.env.CHECK_PRICE_ATOMIC || "50000");
+  const atomic = Number(process.env.CHECK_PRICE_ATOMIC || "100000");
   return NextResponse.json({
     mode: m,
     mock: m === "demo",

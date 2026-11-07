@@ -19,6 +19,31 @@ Built for the Agents on Open Rails Hackathon, Build with buy track.
 
 Live: https://traction-check.vercel.app · Agent card: https://traction-check.vercel.app/agent.json
 
+## Live on Celo mainnet: proof
+
+The live site runs in live mode (`MOCK=0`, `SANDBOX=0`) and pays on Celo mainnet. Everything below can be checked on Celoscan.
+
+| What | Where |
+|---|---|
+| Agent wallet (pays buy services) | [`0xe85c29f1461ec1f550B7981A23190eC57Dd79A67`](https://celoscan.io/address/0xe85c29f1461ec1f550B7981A23190eC57Dd79A67#tokentxns) |
+| ERC-8004 identity | Agent **10007**, registered by the agent wallet in [`0x27001cdb...0ea9`](https://celoscan.io/tx/0x27001cdbad49646188d87769e884452a4d5026bd8e55a663a17ede9d7d6f0ea9) (Identity Registry `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`, tagged with attribution code `celo_b77b99cca1bd`) |
+| Agent card | [traction-check.vercel.app/agent.json](https://traction-check.vercel.app/agent.json) lists `agentId: 10007` |
+| PayTo (receives user payments) | [`0x3Fc08CFfDBAEf388Dc60096935379AE3c603CB0e`](https://celoscan.io/address/0x3Fc08CFfDBAEf388Dc60096935379AE3c603CB0e#tokentxns) |
+
+Paid calls from one real check (`@celo` + the CELO token, Nov 1 2026), all from the agent wallet, paid in USDT:
+
+| Service (via buy) | Paid | Tx |
+|---|---|---|
+| Chainstack Celo RPC | $0.010 | [`0xcd89559f...7e55`](https://celoscan.io/tx/0xcd89559f0802bb552e8c69202abb282557d4a1e17ad66b1b9ddd993919267e55) |
+| X post search | $0.005 | [`0xb631d3f9...f72f`](https://celoscan.io/tx/0xb631d3f9ce329b1314893dc9a35e81be303a87b58819a1cd87ff5c614e25f72f) |
+| X profile lookup | $0.005 | [`0xba7bba05...99ca`](https://celoscan.io/tx/0xba7bba059d85e4081af267e8ac2911371a17f6a489c1692f6b51c98547ac99ca) |
+| X post search | $0.005 | [`0x2dce8706...4017`](https://celoscan.io/tx/0x2dce870662eda9da9fa8d0d6ca90d555be145e25e670e168038421ff6c294017) |
+| Cencori inference | $0.010 | [`0xbcedcb24...dd38`](https://celoscan.io/tx/0xbcedcb24c80a68b580e17046d25277152c3eb40f435adb3edbc075466fccdd38) |
+
+Every report on the site lists its own paid calls with these links, so any check a visitor runs is its own proof.
+
+Billing rules: users pay $0.10 per check after 2 free ones. The payment is settled only when a check completes. A check that fails, or comes back incomplete because a data source failed, is never charged.
+
 ## Signals it checks
 
 On X: how many accounts are posting vs how many posts, whether a few accounts make most of the noise, copy-paste text, share of tiny accounts, engagement.

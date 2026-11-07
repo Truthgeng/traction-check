@@ -389,6 +389,9 @@ export default function Home() {
             <div className={`score ${tone(report.verdict.score)}`}>{report.verdict.score}<small>/100</small></div>
             <p key={report.generatedAt} className={`stamp label ${tone(report.verdict.score)}`}>{report.verdict.label}</p>
             <p className="summary">{report.verdict.summary}</p>
+            {report.partial && (
+              <p className="partial-note">One data source failed during this check, so it may be incomplete. You weren't charged for it.</p>
+            )}
             {writing && <p className="writing">The agent is writing its own read on these numbers…</p>}
           </div>
 

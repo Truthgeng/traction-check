@@ -38,7 +38,10 @@ const handler = async (req: NextRequest): Promise<NextResponse<unknown>> => {
     // Test mode only: x-no-cache lets us measure how steady fresh results are
     const skipCache = isSandbox() && req.headers.get("x-no-cache") === "1";
     const report = await runCheck(input, { skipCache });
-    return NextResponse.json(report);
+    const res = NextResponse.json(report);
+    // A source failed, so this isn't a complete check: the payment is not settled
+    if (report.partial) res.headers.set("x-check-partial", "1");
+    return res;
   } catch (e) {
     if (e instanceof CheckError) return NextResponse.json({ error: e.message }, { status: e.status });
     console.error(e);
@@ -69,7 +72,7 @@ function paidHandler() {
     },
   });
   const server = new x402ResourceServer(facilitator).register("eip155:*", new ExactEvmScheme());
-  const amount = process.env.CHECK_PRICE_ATOMIC || "50000";
+  const amount = process.env.CHECK_PRICE_ATOMIC || "100000";
 
   const route: RouteConfig = {
     accepts: [
@@ -113,9 +116,10 @@ function settleAfterResponse(routeHandler: typeof handler, route: RouteConfig, s
     if (result.type !== "payment-verified") return routeHandler(req);
 
     const response = await routeHandler(req);
-    if (response.status >= 400) {
+    if (response.status >= 400 || response.headers.get("x-check-partial")) {
       await result.cancellationDispatcher?.cancel?.({ reason: "handler_failed", responseStatus: response.status }).catch(() => {});
-      return response; // the check failed, so the payment is never settled
+      response.headers.delete("x-check-partial");
+      return response; // the check failed or was partial, so the payment is never settled
     }
     const responseBody = Buffer.from(await response.clone().arrayBuffer());
     const responseHeaders: Record<string, string> = {};

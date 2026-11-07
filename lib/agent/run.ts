@@ -106,6 +106,7 @@ export async function runCheck(
     verdict,
     paidCalls: receipts,
     summaryToken,
+    ...(errors.length ? { partial: true } : {}),
     mock: false,
     mode: mode(),
     generatedAt: new Date().toISOString(),
