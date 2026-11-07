@@ -4,6 +4,12 @@ Paste a project. The agent reads its X mentions and its onchain activity, then t
 
 Built for the Agents on Open Rails Hackathon, Build with buy track.
 
+## Who it's for
+
+**First user: Truth ([@heistruthX](https://x.com/heistruthX)), a community strategist on Crypto Twitter.** Before he pitches an early-stage Web3 project for community work, or puts his name behind one, he needs to know if its traction is real. Until now that meant an hour of scrolling its mentions, opening account after account to see if they were bots, and guessing at the onchain volume. traction check does it in about 30 seconds: who is really posting, how many of those accounts are new or fake, copy-paste spam, and whether the wallets moving the token are real or passing it back and forth. Every post it counts links to the original, so he can show a project the evidence.
+
+The same check serves anyone on CT about to buy into an early token because their timeline won't stop talking about it.
+
 ## How it works
 
 1. A user enters an X handle and/or a token contract (Celo, Base, Ethereum, Arbitrum, BNB Chain or Hyperliquid). The first 2 checks are free with no wallet. After that each check costs $0.10 in USDT or USDC on Celo, paid with x402 through Celo's hosted facilitator. The payment is only settled if the check completes.
@@ -41,6 +47,8 @@ Paid calls from one real check (`@celo` + the CELO token, Nov 1 2026), all from 
 | Cencori inference | $0.010 | [`0xbcedcb24...dd38`](https://celoscan.io/tx/0xbcedcb24c80a68b580e17046d25277152c3eb40f435adb3edbc075466fccdd38) |
 
 Every report on the site lists its own paid calls with these links, so any check a visitor runs is its own proof.
+
+Independent paying user: wallet [`0x034ea55c58181df71eF1555c0d598861087bAE48`](https://celoscan.io/address/0x034ea55c58181df71eF1555c0d598861087bAE48) paid for a check on Nov 1 2026 ([tx](https://celoscan.io/tx/0x27a7c1c5a0c16183f1519280816d2ae9af7d7915b93938b22c84a7959d10df1f)). Other payments to PayTo came from the builder's own test wallet.
 
 **Live usage, counted from Celo mainnet:** [traction-check.vercel.app/stats](https://traction-check.vercel.app/stats) shows every paid call the agent has made and every check users have paid for, per day, with links to each transaction.
 
